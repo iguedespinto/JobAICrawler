@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Jobs</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; }
+      form { margin-bottom: 1.5rem; }
+      .job { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; }
+      .meta { color: #666; font-size: 0.9rem; }
+      .pagination { margin-top: 1rem; }
+      .pagination a { margin-right: 0.75rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Job Matches</h1>
+
+    <form method="get" action="{{ url_for('jobs.list_jobs') }}">
+      <label>
+        Role
+        <input type="text" name="role" value="{{ filters.get('role', '') }}" />
+      </label>
+      <label>
+        Location
+        <input type="text" name="location" value="{{ filters.get('location', '') }}" />
+      </label>
+      <label>
+        Min score
+        <input type="number" name="min_score" value="{{ filters.get('min_score', '') }}" />
+      </label>
+      <label>
+        Remote only
+        <input type="checkbox" name="remote_only" {% if filters.get('remote_only') %}checked{% endif %} />
+      </label>
+      <button type="submit">Filter</button>
+    </form>
+
+    {% if jobs %}
+      {% for job in jobs %}
+        <div class="job">
+          <h3><a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a></h3>
+          <div class="meta">{{ job.company }} · {{ job.location }}</div>
+          <div class="meta">Fit score: {{ job.fit_score or "n/a" }}</div>
+          {% if job.user_status %}
+            <div class="meta">Status: {{ job.user_status }}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <p>No jobs found.</p>
+    {% endif %}
+
+    <div class="pagination">
+      {% if page > 1 %}
+        <a href="{{ url_for('jobs.list_jobs', page=page-1, per_page=per_page, **filters) }}">Previous</a>
+      {% endif %}
+      <span>Page {{ page }} of {{ total_pages }}</span>
+      {% if page < total_pages %}
+        <a href="{{ url_for('jobs.list_jobs', page=page+1, per_page=per_page, **filters) }}">Next</a>
+      {% endif %}
+    </div>
+  </body>
+</html>
