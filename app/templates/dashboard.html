@@ -101,7 +101,10 @@
           {% for row in rows %}
             <tr>
               <td>{{ row.keyword }}</td>
-              <td class="num">{{ row.count }}</td>
+              <td class="num">
+                <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
+                   title="Show these opportunities">{{ row.count }}</a>
+              </td>
               <td class="num">
                 {{ row.percent }}%
                 <div class="bar" style="width: {{ row.percent }}%;"></div>
