@@ -1,9 +1,13 @@
-"""Synchronous pipeline orchestration for crawling and scoring jobs."""
+"""Synchronous pipeline orchestration for crawling jobs into MongoDB.
+
+Enrichment, scoring and lead generation used to run here via an LLM. Those
+features have been removed: opportunities are now prepared externally and
+brought in through the JSON import flow (see ``app/routes_import.py``).
+"""
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -14,14 +18,10 @@ from dotenv import load_dotenv
 
 from .crawlers.base import BaseCrawler
 from .crawlers.demo_site import DemoSiteCrawler
-from .llm_client import enrich_job, generate_job_leads, score_job
 
 logger = logging.getLogger(__name__)
 
 STATUS_NEW_RAW = "new_raw"
-STATUS_ENRICHED = "enriched"
-STATUS_SCORED = "scored"
-PROFILE_ID = "default"
 
 
 def _utcnow() -> datetime:
@@ -89,106 +89,13 @@ def ingest_jobs() -> int:
     return total_upserts
 
 
-def process_new_jobs(batch_size: int = 50) -> int:
-    """Enrich jobs with status new_raw using the LLM API."""
-    client, db = _get_db()
-    jobs_collection = db.jobs
-    processed = 0
-
-    cursor = jobs_collection.find({"status": STATUS_NEW_RAW}).limit(batch_size)
-    for job in cursor:
-        logger.info("Enriching job %s", job.get("_id"))
-        enrichment = enrich_job(job.get("description_text", ""))
-        jobs_collection.update_one(
-            {"_id": job["_id"]},
-            {
-                "$set": {
-                    "enriched": enrichment,
-                    "status": STATUS_ENRICHED,
-                    "enriched_at": _utcnow(),
-                }
-            },
-        )
-        processed += 1
-
-    client.close()
-    logger.info("Enriched %s jobs", processed)
-    return processed
-
-
-def score_jobs(batch_size: int = 50) -> int:
-    """Score enriched jobs against the single user profile."""
-    client, db = _get_db()
-    jobs_collection = db.jobs
-    profiles_collection = db.profiles
-
-    profile = profiles_collection.find_one({"_id": PROFILE_ID})
-    if not profile:
-        logger.warning("No profile found with _id=default. Skipping scoring.")
-        client.close()
-        return 0
-
-    processed = 0
-    cursor = jobs_collection.find(
-        {"status": STATUS_ENRICHED, "score": {"$exists": False}}
-    ).limit(batch_size)
-    for job in cursor:
-        logger.info("Scoring job %s", job.get("_id"))
-        scoring = score_job(job, profile.get("profile", {}))
-        jobs_collection.update_one(
-            {"_id": job["_id"]},
-            {
-                "$set": {
-                    "score": scoring,
-                    "fit_score": scoring.get("fit_score", 0),
-                    "status": STATUS_SCORED,
-                    "scored_at": _utcnow(),
-                }
-            },
-        )
-        processed += 1
-
-    client.close()
-    logger.info("Scored %s jobs", processed)
-    return processed
-
-
-def run_pipeline() -> None:
-    """Run the full ingest -> enrich -> score pipeline."""
-    ingest_jobs()
-    process_new_jobs()
-    score_jobs()
-
-
-def generate_leads() -> dict:
-    """Generate job search leads from the stored profile."""
-    client, db = _get_db()
-    profiles_collection = db.profiles
-
-    profile = profiles_collection.find_one({"_id": PROFILE_ID})
-    if not profile:
-        logger.warning("No profile found with _id=default. Skipping leads.")
-        client.close()
-        return {"error": "profile not found"}
-
-    leads = generate_job_leads(profile.get("profile", {}))
-    profiles_collection.update_one(
-        {"_id": PROFILE_ID},
-        {"$set": {"leads": leads, "leads_generated_at": _utcnow()}},
-    )
-    client.close()
-    logger.info("Generated leads for profile %s", PROFILE_ID)
-    return leads
-
-
 def _configure_logging() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 
 def _parse_args(argv: Iterable[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Job pipeline runner.")
-    parser.add_argument("command", choices=["ingest", "enrich", "score", "leads", "all"])
-    parser.add_argument("--batch-size", type=int, default=50)
+    parser.add_argument("command", choices=["ingest"])
     return parser.parse_args(list(argv))
 
 
@@ -198,15 +105,6 @@ def main(argv: Iterable[str]) -> None:
     args = _parse_args(argv)
     if args.command == "ingest":
         ingest_jobs()
-    elif args.command == "enrich":
-        process_new_jobs(batch_size=args.batch_size)
-    elif args.command == "score":
-        score_jobs(batch_size=args.batch_size)
-    elif args.command == "all":
-        run_pipeline()
-    elif args.command == "leads":
-        leads = generate_leads()
-        print(json.dumps(leads, indent=2, ensure_ascii=True, default=str))
 
 
 if __name__ == "__main__":

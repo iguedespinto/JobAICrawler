@@ -20,62 +20,22 @@
       <div class="meta">Job link: n/a</div>
     {% endif %}
 
+    {% if job.salary %}
+      <div class="meta">Salary: {{ job.salary }}</div>
+    {% endif %}
+
+    {% if job.keywords %}
+      <div class="section">
+        <h2>Keywords</h2>
+        {% for keyword in job.keywords %}
+          <span class="tag">{{ keyword }}</span>
+        {% endfor %}
+      </div>
+    {% endif %}
+
     <div class="section">
       <h2>Description</h2>
-      <p>{{ job.description_text }}</p>
-    </div>
-
-    <div class="section">
-      <h2>Normalized fields</h2>
-      <div><strong>Role:</strong> {{ enrichment.get('normalized_role') or "n/a" }}</div>
-      <div><strong>Seniority:</strong> {{ enrichment.get('seniority') or "n/a" }}</div>
-      <div><strong>Location:</strong> {{ enrichment.get('location') or "n/a" }}</div>
-      <div><strong>Remote level:</strong> {{ enrichment.get('remote_level') or "n/a" }}</div>
-      <div><strong>Company:</strong> {{ enrichment.get('canonical_company') or "n/a" }}</div>
-      <div><strong>Salary band:</strong> {{ enrichment.get('salary_band') or "n/a" }}</div>
-      <div><strong>Skills:</strong>
-        {% if enrichment.get('skills') %}
-          {% for skill in enrichment.get('skills') %}
-            <span class="tag">{{ skill }}</span>
-          {% endfor %}
-        {% else %}
-          n/a
-        {% endif %}
-      </div>
-    </div>
-
-    <div class="section">
-      <h2>AI Insights</h2>
-      <div><strong>Fit score:</strong> {{ job.fit_score or "n/a" }}</div>
-      <div><strong>Summary:</strong> {{ score.get('summary') or "n/a" }}</div>
-      <div><strong>Recommendation:</strong> {{ score.get('apply_recommendation') or "n/a" }}</div>
-      <div><strong>Pros:</strong>
-        <ul>
-          {% for item in score.get('pros', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-      </div>
-      <div><strong>Cons:</strong>
-        <ul>
-          {% for item in score.get('cons', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-      </div>
-      <div><strong>Missing skills:</strong>
-        <ul>
-          {% for item in score.get('missing_skills', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-      </div>
+      <p style="white-space: pre-line;">{{ job.description_text }}</p>
     </div>
 
     <div class="section">
@@ -87,6 +47,26 @@
           <option value="none" {% if not job.user_status %}selected{% endif %}>None</option>
         </select>
         <button type="submit">Update</button>
+      </form>
+    </div>
+
+    <div class="section">
+      <h2>Archive</h2>
+      <p class="meta">
+        {% if job.archived %}
+          This job is archived and is excluded when matching imports.
+        {% else %}
+          This job is active and is compared against when matching imports.
+        {% endif %}
+      </p>
+      <form method="post" action="{{ url_for('jobs.archive_job', job_id=job.id) }}">
+        {% if job.archived %}
+          <input type="hidden" name="archived" value="0" />
+          <button type="submit">Unarchive</button>
+        {% else %}
+          <input type="hidden" name="archived" value="1" />
+          <button type="submit">Archive</button>
+        {% endif %}
       </form>
     </div>
   </body>

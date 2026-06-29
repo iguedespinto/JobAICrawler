@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Import Opportunities</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; }
+      .hint { color: #666; font-size: 0.9rem; }
+      .flash { background: #fff3cd; border: 1px solid #ffe69c; padding: 0.75rem; margin-bottom: 1rem; }
+      .nav a { margin-right: 1rem; }
+      pre { background: #f7f7f7; padding: 0.75rem; overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <div class="nav">
+      <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
+      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
+    </div>
+
+    <h1>Import Opportunities</h1>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <p>Upload a JSON file of job opportunities. The next screen lets you review
+       each one and matches them against opportunities already in the database
+       before anything is created.</p>
+
+    <form method="post" action="{{ url_for('import_jobs.preview') }}" enctype="multipart/form-data">
+      <input type="file" name="import_file" accept=".json,application/json" />
+      <button type="submit">Preview</button>
+    </form>
+
+    <h2>Expected format</h2>
+    <p class="hint">A JSON array of objects (a single object is also accepted):</p>
+    <pre>[
+  {
+    "name": "Senior Backend Engineer",
+    "company": "Acme Corp",
+    "url": "https://example.com/jobs/123",
+    "salary": "€90,000 - €100,000/year",
+    "description": "Full job description text...",
+    "keywords": ["Python", "Flask", "MongoDB"]
+  }
+]</pre>
+  </body>
+</html>

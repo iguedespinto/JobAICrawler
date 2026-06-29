@@ -12,6 +12,10 @@
     </style>
   </head>
   <body>
+    <div style="margin-bottom: 1rem;">
+      <a href="{{ url_for('jobs.list_jobs') }}" style="margin-right: 1rem;">Jobs</a>
+      <a href="{{ url_for('import_jobs.import_form') }}">Import Opportunities</a>
+    </div>
     <h1>Your Profile</h1>
     <form method="post" action="{{ url_for('profile.update_profile') }}">
       <label>
@@ -49,64 +53,9 @@
     </form>
 
     <div style="margin-top: 2rem;">
-      <h2>Job Leads</h2>
-      {% if leads %}
-        <h3>Search queries</h3>
-        <ul>
-          {% for item in leads.get('search_queries', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-
-        <h3>Target companies</h3>
-        <ul>
-          {% for item in leads.get('target_companies', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-
-        <h3>Role keywords</h3>
-        <ul>
-          {% for item in leads.get('role_keywords', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-
-        <h3>Locations</h3>
-        <ul>
-          {% for item in leads.get('locations', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-
-        <h3>Checklist</h3>
-        <ul>
-          {% for item in leads.get('checklist', []) %}
-            <li>{{ item }}</li>
-          {% else %}
-            <li>n/a</li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p>No leads generated yet. Run <code>python -m app.pipeline leads</code>.</p>
-      {% endif %}
-    </div>
-
-    <div style="margin-top: 2rem;">
-      <h2>Import Job Leads</h2>
-      <p>Paste results from Perplexity or another source. Use one job per block (separate by a blank line).</p>
-      <form method="post" action="{{ url_for('profile.import_jobs') }}">
-        <textarea name="import_text" placeholder="Title&#10;Company&#10;Location&#10;https://example.com/job"></textarea>
-        <button type="submit">Import Jobs</button>
-      </form>
+      <h2>Import Opportunities</h2>
+      <p>Opportunities are prepared externally and brought in as a JSON file.</p>
+      <a href="{{ url_for('import_jobs.import_form') }}">Go to import</a>
     </div>
   </body>
 </html>

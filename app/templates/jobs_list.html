@@ -13,24 +13,36 @@
     </style>
   </head>
   <body>
-    <h1>Job Matches</h1>
+    <div style="margin-bottom: 1rem;">
+      <a href="{{ url_for('import_jobs.import_form') }}" style="margin-right: 1rem;">Import Opportunities</a>
+      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
+    </div>
+    <h1>{% if viewing_archived %}Archived opportunities{% else %}Opportunities{% endif %}</h1>
+
+    <div style="margin-bottom: 1rem;">
+      {% if viewing_archived %}
+        <a href="{{ url_for('jobs.list_jobs') }}">← View active</a>
+      {% else %}
+        <a href="{{ url_for('jobs.list_jobs', archived=1) }}">View archived</a>
+      {% endif %}
+    </div>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div style="background:#eafaf1;border:1px solid #b7e4c7;padding:0.75rem;margin-bottom:1rem;">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
     <form method="get" action="{{ url_for('jobs.list_jobs') }}">
       <label>
-        Role
-        <input type="text" name="role" value="{{ filters.get('role', '') }}" />
+        Company
+        <input type="text" name="company" value="{{ filters.get('company', '') }}" />
       </label>
       <label>
         Location
         <input type="text" name="location" value="{{ filters.get('location', '') }}" />
-      </label>
-      <label>
-        Min score
-        <input type="number" name="min_score" value="{{ filters.get('min_score', '') }}" />
-      </label>
-      <label>
-        Remote only
-        <input type="checkbox" name="remote_only" {% if filters.get('remote_only') %}checked{% endif %} />
       </label>
       <button type="submit">Filter</button>
     </form>
@@ -39,10 +51,19 @@
       {% for job in jobs %}
         <div class="job">
           <h3><a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a></h3>
-          <div class="meta">{{ job.company }} · {{ job.location }}</div>
-          <div class="meta">Fit score: {{ job.fit_score or "n/a" }}</div>
+          <div class="meta">{{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}</div>
+          <div class="meta">Added: {{ job.created_at or "n/a" }}</div>
+          {% if job.salary %}
+            <div class="meta">Salary: {{ job.salary }}</div>
+          {% endif %}
+          {% if job.keywords %}
+            <div class="meta">{{ job.keywords | join(', ') }}</div>
+          {% endif %}
           {% if job.user_status %}
             <div class="meta">Status: {{ job.user_status }}</div>
+          {% endif %}
+          {% if job.archived %}
+            <div class="meta"><strong>Archived</strong></div>
           {% endif %}
         </div>
       {% endfor %}
