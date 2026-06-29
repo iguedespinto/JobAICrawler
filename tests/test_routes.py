@@ -17,18 +17,12 @@ def test_jobs_list_route_filters(app_client, monkeypatch):
                 "title": "Backend Engineer",
                 "company": "Acme",
                 "location": "Remote",
-                "fit_score": 90,
-                "posted_at": 2,
-                "enriched": {"normalized_role": "Backend Engineer", "remote_level": "remote"},
             },
             {
                 "_id": job_id_2,
                 "title": "Frontend Engineer",
                 "company": "Globex",
                 "location": "Dublin",
-                "fit_score": 70,
-                "posted_at": 1,
-                "enriched": {"normalized_role": "Frontend Engineer", "remote_level": "onsite"},
             },
         ],
         profiles=[],
@@ -38,11 +32,52 @@ def test_jobs_list_route_filters(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    response = app_client.get("/jobs?role=Backend%20Engineer&remote_only=1")
+    response = app_client.get("/jobs?company=Acme")
     assert response.status_code == 200
     body = response.data.decode("utf-8")
     assert "Backend Engineer" in body
     assert "Frontend Engineer" not in body
+
+
+def test_jobs_list_excludes_archived_by_default(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Active Role", "company": "Acme"},
+            {"_id": ObjectId(), "title": "Old Role", "company": "Acme", "archived": True},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    active = app_client.get("/jobs").data.decode("utf-8")
+    assert "Active Role" in active
+    assert "Old Role" not in active
+
+    archived = app_client.get("/jobs?archived=1").data.decode("utf-8")
+    assert "Old Role" in archived
+    assert "Active Role" not in archived
+
+
+def test_archive_job_route(app_client, monkeypatch):
+    job_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[{"_id": job_id, "title": "Role", "company": "Acme"}],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    response = app_client.post(f"/jobs/{job_id}/archive", data={"archived": "1"})
+    assert response.status_code == 302
+    assert fake_db.jobs.find_one({"_id": job_id})["archived"] is True
+
+    response = app_client.post(f"/jobs/{job_id}/archive", data={"archived": "0"})
+    assert fake_db.jobs.find_one({"_id": job_id})["archived"] is False
 
 
 def test_job_detail_route(app_client, monkeypatch):
@@ -54,11 +89,10 @@ def test_job_detail_route(app_client, monkeypatch):
                 "title": "Backend Engineer",
                 "company": "Acme",
                 "location": "Remote",
+                "salary": "€90,000",
+                "keywords": ["Python", "Flask"],
                 "description_text": "Role details",
                 "url": "https://example.com/jobs/1",
-                "fit_score": 88,
-                "enriched": {"normalized_role": "Backend Engineer"},
-                "score": {"summary": "Strong fit"},
             }
         ],
         profiles=[],
@@ -72,4 +106,5 @@ def test_job_detail_route(app_client, monkeypatch):
     assert response.status_code == 200
     body = response.data.decode("utf-8")
     assert "Backend Engineer" in body
-    assert "Strong fit" in body
+    assert "Role details" in body
+    assert "Python" in body

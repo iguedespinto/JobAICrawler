@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
 from bson import ObjectId
@@ -33,29 +34,22 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     filters: Dict[str, Any] = {}
     echo: Dict[str, Any] = {}
 
-    normalized_role = request.args.get("role")
-    if normalized_role:
-        filters["enriched.normalized_role"] = normalized_role
-        echo["role"] = normalized_role
+    company = request.args.get("company")
+    if company:
+        filters["company"] = company
+        echo["company"] = company
 
     location = request.args.get("location")
     if location:
-        filters["enriched.location"] = location
+        filters["location"] = location
         echo["location"] = location
 
-    remote_only = request.args.get("remote_only")
-    if remote_only in {"1", "true", "yes", "on"}:
-        filters["enriched.remote_level"] = "remote"
-        echo["remote_only"] = True
-
-    min_score_raw = request.args.get("min_score")
-    if min_score_raw:
-        try:
-            min_score = int(min_score_raw)
-            filters["fit_score"] = {"$gte": min_score}
-            echo["min_score"] = min_score
-        except ValueError:
-            echo["min_score"] = ""
+    # Active jobs only by default; ?archived=1 shows the archived ones instead.
+    if request.args.get("archived") in {"1", "true", "yes", "on"}:
+        filters["archived"] = True
+        echo["archived"] = 1
+    else:
+        filters["archived"] = {"$ne": True}
 
     return filters, echo
 
@@ -86,9 +80,16 @@ def _normalize_user_status(raw_value: str) -> Optional[str]:
     return normalized
 
 
+def _format_date(value: Any) -> Optional[str]:
+    """Format a stored datetime as YYYY-MM-DD, or None."""
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    return None
+
+
 @jobs_bp.route("", methods=["GET"])
 def list_jobs():
-    """Paginated list of jobs ordered by fit score."""
+    """Paginated list of jobs ordered by record creation date (newest first)."""
     db, error = _get_db_or_error()
     if error:
         return error
@@ -96,7 +97,7 @@ def list_jobs():
     page, per_page = _parse_pagination()
     filters, echo = _build_filters()
 
-    sort = [("fit_score", -1), ("posted_at", -1)]
+    sort = [("created_at", -1)]
     cursor = db.jobs.find(filters).sort(sort).skip((page - 1) * per_page).limit(per_page)
     total = db.jobs.count_documents(filters)
     total_pages = max(1, (total + per_page - 1) // per_page)
@@ -109,9 +110,12 @@ def list_jobs():
                 "title": job.get("title"),
                 "company": job.get("company"),
                 "location": job.get("location"),
-                "fit_score": job.get("fit_score"),
+                "salary": job.get("salary"),
+                "keywords": job.get("keywords", []),
                 "status": job.get("status"),
                 "user_status": job.get("user_status"),
+                "archived": bool(job.get("archived")),
+                "created_at": _format_date(job.get("created_at")),
             }
         )
 
@@ -123,6 +127,7 @@ def list_jobs():
         total=total,
         total_pages=total_pages,
         filters=echo,
+        viewing_archived=bool(echo.get("archived")),
     )
 
 
@@ -143,15 +148,8 @@ def get_job(job_id: str):
 
     job["id"] = str(job["_id"])
     job.pop("_id", None)
-    enrichment = job.get("enriched", {}) or {}
-    score = job.get("score", {}) or {}
 
-    return render_template(
-        "job_detail.html",
-        job=job,
-        enrichment=enrichment,
-        score=score,
-    )
+    return render_template("job_detail.html", job=job)
 
 
 @jobs_bp.route("/<job_id>/save", methods=["POST"])
@@ -168,6 +166,25 @@ def save_job(job_id: str):
     update_value = _normalize_user_status(request.form.get("user_status", ""))
 
     result = db.jobs.update_one({"_id": oid}, {"$set": {"user_status": update_value}})
+    if result.matched_count == 0:
+        return jsonify({"error": "job not found"}), 404
+
+    return redirect(url_for("jobs.get_job", job_id=job_id))
+
+
+@jobs_bp.route("/<job_id>/archive", methods=["POST"])
+def archive_job(job_id: str):
+    """Archive or unarchive a job so it is excluded from / included in matching."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    oid, error = _parse_job_id(job_id)
+    if error:
+        return error
+
+    archived = request.form.get("archived") == "1"
+    result = db.jobs.update_one({"_id": oid}, {"$set": {"archived": archived}})
     if result.matched_count == 0:
         return jsonify({"error": "job not found"}), 404
 

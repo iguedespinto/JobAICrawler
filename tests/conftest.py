@@ -36,6 +36,9 @@ def _matches_filter(doc: Dict[str, Any], filter_doc: Dict[str, Any]) -> bool:
                 exists = _get_nested(doc, key) is not None
                 if value["$exists"] != exists:
                     return False
+            elif "$ne" in value:
+                if _get_nested(doc, key) == value["$ne"]:
+                    return False
             else:
                 return False
         else:

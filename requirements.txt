@@ -1,7 +1,6 @@
 Flask>=2.3
 gunicorn>=21.2
 pymongo[srv]>=4.6
-requests>=2.31
 pytest>=7.4
 pytest-mock>=3.11
 python-dotenv>=1.0

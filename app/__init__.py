@@ -18,6 +18,13 @@ def create_app() -> Flask:
     _init_mongo(app)
     _register_blueprints(app)
 
+    @app.route("/")
+    def index():
+        """Send the root URL to the jobs list."""
+        from flask import redirect, url_for
+
+        return redirect(url_for("jobs.list_jobs"))
+
     @app.route("/healthz")
     def healthcheck() -> dict:
         """Simple health check for uptime monitoring."""
@@ -30,9 +37,8 @@ def _load_config(app: Flask) -> None:
     """Load configuration from environment variables."""
     app.config["MONGODB_URI"] = os.getenv("MONGODB_URI", "") or os.getenv("MONGO_URI", "")
     app.config["MONGO_DB_NAME"] = os.getenv("MONGO_DB_NAME", "jobs_db")
-    app.config["LLM_BASE_URL"] = os.getenv("LLM_BASE_URL", "")
-    app.config["LLM_API_KEY"] = os.getenv("LLM_API_KEY", "")
-    app.config["LLM_MODEL"] = os.getenv("LLM_MODEL", "")
+    # Used to sign the session cookie that backs flashed messages.
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 
 
 def _init_mongo(app: Flask) -> None:
@@ -61,6 +67,8 @@ def _register_blueprints(app: Flask) -> None:
     """Register application blueprints."""
     from .routes_jobs import jobs_bp
     from .routes_profile import profile_bp
+    from .routes_import import import_bp
 
     app.register_blueprint(jobs_bp)
     app.register_blueprint(profile_bp)
+    app.register_blueprint(import_bp)
