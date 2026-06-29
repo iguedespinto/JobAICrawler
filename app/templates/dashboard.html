@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Dashboard</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; }
+      .nav a { margin-right: 1rem; }
+      .hint { color: #666; font-size: 0.9rem; }
+      .cloud {
+        border: 1px solid #eee;
+        background: #fafafa;
+        padding: 1.5rem;
+        margin: 1rem 0 2rem;
+        line-height: 2.4;
+        text-align: center;
+      }
+      .cloud span {
+        display: inline-block;
+        margin: 0 0.45rem;
+        color: #1f6feb;
+        white-space: nowrap;
+      }
+      table { border-collapse: collapse; width: 100%; max-width: 720px; }
+      th, td { border: 1px solid #ddd; padding: 0.5rem 0.75rem; text-align: left; }
+      th { background: #f2f2f2; }
+      td.num, th.num { text-align: right; }
+      .bar {
+        background: #e6f0ff;
+        height: 0.5rem;
+        border-radius: 2px;
+        margin-top: 0.25rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="nav">
+      <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
+      <a href="{{ url_for('import_jobs.import_form') }}">Import</a>
+      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
+    </div>
+
+    <h1>Keyword Dashboard</h1>
+    <p class="hint">
+      Based on {{ total_jobs }} active opportunit{{ 'y' if total_jobs == 1 else 'ies' }}.
+      Each keyword's count is the number of opportunities that list it; the
+      percentage is its share of active opportunities.
+    </p>
+
+    {% if cloud %}
+      <div class="cloud">
+        {% for item in cloud %}
+          <span style="font-size: {{ item.size }}px; font-weight: {{ item.weight }}; opacity: {{ item.opacity }};"
+                title="{{ item.count }} opportunit{{ 'y' if item.count == 1 else 'ies' }}">{{ item.keyword }}</span>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>No keywords yet. Import some opportunities to populate the dashboard.</p>
+    {% endif %}
+
+    {% if rows %}
+      <table>
+        <thead>
+          <tr>
+            <th>Keyword</th>
+            <th class="num">Opportunities</th>
+            <th class="num">% of total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>{{ row.keyword }}</td>
+              <td class="num">{{ row.count }}</td>
+              <td class="num">
+                {{ row.percent }}%
+                <div class="bar" style="width: {{ row.percent }}%;"></div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  </body>
+</html>
