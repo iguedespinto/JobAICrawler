@@ -48,6 +48,16 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         ]
         echo["q"] = query
 
+    # Exact (case-insensitive) keyword match against the keywords array, used by
+    # the dashboard "Opportunities" links to show the jobs behind a count.
+    keyword = request.args.get("keyword", "").strip()
+    if keyword:
+        filters["keywords"] = {
+            "$regex": f"^{re.escape(keyword)}$",
+            "$options": "i",
+        }
+        echo["keyword"] = keyword
+
     # Active jobs only by default; ?archived=1 shows the archived ones instead.
     if request.args.get("archived") in {"1", "true", "yes", "on"}:
         filters["archived"] = True

@@ -38,14 +38,22 @@
 
     <form method="get" action="{{ url_for('jobs.list_jobs') }}">
       {% if viewing_archived %}<input type="hidden" name="archived" value="1" />{% endif %}
+      {% if filters.get('keyword') %}<input type="hidden" name="keyword" value="{{ filters.get('keyword') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
              placeholder="Search title, keywords, description" style="width: 320px;" />
       <button type="submit">Search</button>
       {% if filters.get('q') %}
-        <a href="{{ url_for('jobs.list_jobs', archived=filters.get('archived')) }}"
+        <a href="{{ url_for('jobs.list_jobs', archived=filters.get('archived'), keyword=filters.get('keyword')) }}"
            style="margin-left: 0.5rem;">Clear</a>
       {% endif %}
     </form>
+
+    {% if filters.get('keyword') %}
+      <p style="margin-top: 0.75rem;">
+        Showing opportunities with keyword <strong>{{ filters.get('keyword') }}</strong>.
+        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), archived=filters.get('archived')) }}">Clear keyword</a>
+      </p>
+    {% endif %}
 
     {% if jobs %}
       {% for job in jobs %}

@@ -51,6 +51,27 @@ def test_jobs_list_search_matches_title_keywords_description(app_client, monkeyp
     assert "Backend Engineer" not in body
 
 
+def test_jobs_list_keyword_filter_exact_match(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Backend", "keywords": ["Java", "Spring"]},
+            {"_id": ObjectId(), "title": "Frontend", "keywords": ["JavaScript"]},
+            {"_id": ObjectId(), "title": "Mobile", "keywords": ["java"]},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    # Exact (case-insensitive) keyword match: "Java" and "java", not "JavaScript".
+    body = app_client.get("/jobs?keyword=Java").data.decode("utf-8")
+    assert "Backend" in body
+    assert "Mobile" in body
+    assert "Frontend" not in body
+
+
 def test_jobs_list_search_escapes_special_characters(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[
