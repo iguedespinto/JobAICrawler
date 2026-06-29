@@ -82,6 +82,7 @@ def _cloud_items(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             {
                 "keyword": row["keyword"],
                 "count": row["count"],
+                "percent": row["percent"],
                 "size": size,
                 # Heavier weight and stronger colour for more frequent terms.
                 "weight": 700 if frac > 0.66 else (500 if frac > 0.33 else 400),

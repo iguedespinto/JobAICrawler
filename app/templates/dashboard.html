@@ -20,7 +20,30 @@
         margin: 0 0.45rem;
         color: #1f6feb;
         white-space: nowrap;
+        cursor: default;
       }
+      .cloud span:hover { text-decoration: underline; }
+      #kw-tip {
+        position: absolute;
+        z-index: 10;
+        display: none;
+        min-width: 160px;
+        padding: 0.5rem 0.7rem;
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        font-size: 0.85rem;
+        color: #222;
+        pointer-events: none;
+      }
+      #kw-tip .kw-title {
+        font-weight: 700;
+        margin-bottom: 0.3rem;
+        word-break: break-word;
+      }
+      #kw-tip .kw-row { display: flex; justify-content: space-between; gap: 1rem; }
+      #kw-tip .kw-row span:last-child { color: #1f6feb; font-weight: 600; }
       table { border-collapse: collapse; width: 100%; max-width: 720px; }
       th, td { border: 1px solid #ddd; padding: 0.5rem 0.75rem; text-align: left; }
       th { background: #f2f2f2; }
@@ -51,8 +74,15 @@
       <div class="cloud">
         {% for item in cloud %}
           <span style="font-size: {{ item.size }}px; font-weight: {{ item.weight }}; opacity: {{ item.opacity }};"
-                title="{{ item.count }} opportunit{{ 'y' if item.count == 1 else 'ies' }}">{{ item.keyword }}</span>
+                data-keyword="{{ item.keyword }}"
+                data-count="{{ item.count }}"
+                data-percent="{{ item.percent }}">{{ item.keyword }}</span>
         {% endfor %}
+      </div>
+      <div id="kw-tip">
+        <div class="kw-title"></div>
+        <div class="kw-row"><span>Opportunities</span><span class="kw-count"></span></div>
+        <div class="kw-row"><span>% of total</span><span class="kw-percent"></span></div>
       </div>
     {% else %}
       <p>No keywords yet. Import some opportunities to populate the dashboard.</p>
@@ -81,5 +111,40 @@
         </tbody>
       </table>
     {% endif %}
+
+    <script>
+      (function () {
+        var tip = document.getElementById("kw-tip");
+        if (!tip) return;
+        var titleEl = tip.querySelector(".kw-title");
+        var countEl = tip.querySelector(".kw-count");
+        var percentEl = tip.querySelector(".kw-percent");
+        var OFFSET = 14;
+
+        function place(e) {
+          var x = e.pageX + OFFSET;
+          var y = e.pageY + OFFSET;
+          // Keep the tip within the viewport horizontally.
+          var maxX = window.scrollX + document.documentElement.clientWidth - tip.offsetWidth - 4;
+          if (x > maxX) x = e.pageX - tip.offsetWidth - OFFSET;
+          tip.style.left = x + "px";
+          tip.style.top = y + "px";
+        }
+
+        document.querySelectorAll(".cloud span").forEach(function (el) {
+          el.addEventListener("mouseenter", function (e) {
+            titleEl.textContent = el.dataset.keyword;
+            countEl.textContent = el.dataset.count;
+            percentEl.textContent = el.dataset.percent + "%";
+            tip.style.display = "block";
+            place(e);
+          });
+          el.addEventListener("mousemove", place);
+          el.addEventListener("mouseleave", function () {
+            tip.style.display = "none";
+          });
+        });
+      })();
+    </script>
   </body>
 </html>
