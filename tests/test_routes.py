@@ -7,22 +7,29 @@ from bson import ObjectId
 from tests.conftest import FakeDB
 
 
-def test_jobs_list_route_filters(app_client, monkeypatch):
-    job_id_1 = ObjectId()
-    job_id_2 = ObjectId()
+def test_jobs_list_search_matches_title_keywords_description(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[
             {
-                "_id": job_id_1,
+                "_id": ObjectId(),
                 "title": "Backend Engineer",
                 "company": "Acme",
-                "location": "Remote",
+                "keywords": ["Python", "Flask"],
+                "description_text": "Build APIs",
             },
             {
-                "_id": job_id_2,
+                "_id": ObjectId(),
                 "title": "Frontend Engineer",
                 "company": "Globex",
-                "location": "Dublin",
+                "keywords": ["React", "TypeScript"],
+                "description_text": "Build UIs",
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Data Analyst",
+                "company": "Initech",
+                "keywords": ["SQL"],
+                "description_text": "Loves python scripting",
             },
         ],
         profiles=[],
@@ -32,11 +39,37 @@ def test_jobs_list_route_filters(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    response = app_client.get("/jobs?company=Acme")
+    # Case-insensitive; matches the keyword on job 1 and the description on job 3.
+    body = app_client.get("/jobs?q=python").data.decode("utf-8")
+    assert "Backend Engineer" in body
+    assert "Data Analyst" in body
+    assert "Frontend Engineer" not in body
+
+    # Matches a title only.
+    body = app_client.get("/jobs?q=frontend").data.decode("utf-8")
+    assert "Frontend Engineer" in body
+    assert "Backend Engineer" not in body
+
+
+def test_jobs_list_search_escapes_special_characters(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "C++ Engineer", "keywords": ["C++"]},
+            {"_id": ObjectId(), "title": "Python Engineer", "keywords": ["Python"]},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    # "C++" must be treated literally, not as an invalid regex quantifier.
+    response = app_client.get("/jobs?q=C%2B%2B")
     assert response.status_code == 200
     body = response.data.decode("utf-8")
-    assert "Backend Engineer" in body
-    assert "Frontend Engineer" not in body
+    assert "C++ Engineer" in body
+    assert "Python Engineer" not in body
 
 
 def test_jobs_list_excludes_archived_by_default(app_client, monkeypatch):

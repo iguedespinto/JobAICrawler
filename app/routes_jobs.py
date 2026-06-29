@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -34,15 +35,18 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
     filters: Dict[str, Any] = {}
     echo: Dict[str, Any] = {}
 
-    company = request.args.get("company")
-    if company:
-        filters["company"] = company
-        echo["company"] = company
-
-    location = request.args.get("location")
-    if location:
-        filters["location"] = location
-        echo["location"] = location
+    # Single free-text search: case-insensitive substring match across the
+    # title, keywords, and description. The term is escaped so special
+    # characters (e.g. "C++", ".NET") are matched literally.
+    query = request.args.get("q", "").strip()
+    if query:
+        regex = {"$regex": re.escape(query), "$options": "i"}
+        filters["$or"] = [
+            {"title": regex},
+            {"keywords": regex},
+            {"description_text": regex},
+        ]
+        echo["q"] = query
 
     # Active jobs only by default; ?archived=1 shows the archived ones instead.
     if request.args.get("archived") in {"1", "true", "yes", "on"}:

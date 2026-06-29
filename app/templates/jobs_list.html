@@ -37,15 +37,14 @@
     {% endwith %}
 
     <form method="get" action="{{ url_for('jobs.list_jobs') }}">
-      <label>
-        Company
-        <input type="text" name="company" value="{{ filters.get('company', '') }}" />
-      </label>
-      <label>
-        Location
-        <input type="text" name="location" value="{{ filters.get('location', '') }}" />
-      </label>
-      <button type="submit">Filter</button>
+      {% if viewing_archived %}<input type="hidden" name="archived" value="1" />{% endif %}
+      <input type="text" name="q" value="{{ filters.get('q', '') }}"
+             placeholder="Search title, keywords, description" style="width: 320px;" />
+      <button type="submit">Search</button>
+      {% if filters.get('q') %}
+        <a href="{{ url_for('jobs.list_jobs', archived=filters.get('archived')) }}"
+           style="margin-left: 0.5rem;">Clear</a>
+      {% endif %}
     </form>
 
     {% if jobs %}
