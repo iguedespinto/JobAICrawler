@@ -25,9 +25,25 @@ def _get_nested(doc: Dict[str, Any], dotted_key: str) -> Any:
     return current
 
 
+def _regex_matches(target: Any, pattern: str, options: str) -> bool:
+    """Mimic Mongo $regex: match a string, or any element of a list."""
+    import re
+
+    flags = re.IGNORECASE if "i" in options else 0
+    compiled = re.compile(pattern, flags)
+    if isinstance(target, list):
+        return any(isinstance(item, str) and compiled.search(item) for item in target)
+    if isinstance(target, str):
+        return bool(compiled.search(target))
+    return False
+
+
 def _matches_filter(doc: Dict[str, Any], filter_doc: Dict[str, Any]) -> bool:
     for key, value in filter_doc.items():
-        if isinstance(value, dict):
+        if key == "$or":
+            if not any(_matches_filter(doc, sub) for sub in value):
+                return False
+        elif isinstance(value, dict):
             if "$gte" in value:
                 target = _get_nested(doc, key)
                 if target is None or target < value["$gte"]:
@@ -38,6 +54,11 @@ def _matches_filter(doc: Dict[str, Any], filter_doc: Dict[str, Any]) -> bool:
                     return False
             elif "$ne" in value:
                 if _get_nested(doc, key) == value["$ne"]:
+                    return False
+            elif "$regex" in value:
+                if not _regex_matches(
+                    _get_nested(doc, key), value["$regex"], value.get("$options", "")
+                ):
                     return False
             else:
                 return False
