@@ -15,7 +15,7 @@
     <h1>{{ job.title }}</h1>
     <div class="meta">{{ job.company }} · {{ job.location }}</div>
     {% if job.url %}
-      <div class="meta"><a href="{{ job.url }}" target="_blank" rel="noopener">Job link</a></div>
+      <div class="meta"><a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">Job link</a></div>
     {% else %}
       <div class="meta">Job link: n/a</div>
     {% endif %}
@@ -24,14 +24,16 @@
       <div class="meta">Salary: {{ job.salary }}</div>
     {% endif %}
 
-    {% if job.keywords %}
-      <div class="section">
-        <h2>Keywords</h2>
+    <div class="section">
+      <h2>Keywords</h2>
+      {% if job.keywords %}
         {% for keyword in job.keywords %}
           <span class="tag">{{ keyword }}</span>
         {% endfor %}
-      </div>
-    {% endif %}
+      {% else %}
+        <span class="meta">n/a</span>
+      {% endif %}
+    </div>
 
     <div class="section">
       <h2>Description</h2>
@@ -69,5 +71,39 @@
         {% endif %}
       </form>
     </div>
+
+    {% if job.url %}
+      <div class="section">
+        <h2>Job posting</h2>
+        <p class="meta">
+          Some job sites block embedding; if the preview below is blank,
+          <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">open it in a new window</a>.
+        </p>
+        <iframe
+          src="{{ job.url }}"
+          title="Job posting"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          style="width: 100%; height: 80vh; border: 1px solid #ddd;"></iframe>
+      </div>
+    {% endif %}
+
+    <script>
+      // Open external job links in a separate window (not a new tab).
+      document.querySelectorAll("a.ext-window").forEach(function (link) {
+        link.addEventListener("click", function (e) {
+          e.preventDefault();
+          var w = 1200, h = 900;
+          var left = window.screenX + Math.max(0, (window.outerWidth - w) / 2);
+          var top = window.screenY + Math.max(0, (window.outerHeight - h) / 2);
+          window.open(
+            this.href,
+            "_blank",
+            "noopener,noreferrer,width=" + w + ",height=" + h + ",left=" + left + ",top=" + top
+          );
+        });
+      });
+    </script>
   </body>
 </html>
