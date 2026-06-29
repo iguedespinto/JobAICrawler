@@ -20,7 +20,7 @@
         margin: 0 0.45rem;
         color: #1f6feb;
         white-space: nowrap;
-        cursor: default;
+        cursor: pointer;
       }
       .cloud span:hover { text-decoration: underline; }
       #kw-tip {
@@ -54,6 +54,8 @@
         border-radius: 2px;
         margin-top: 0.25rem;
       }
+      tbody tr { transition: background-color 0.8s ease; }
+      tbody tr.row-highlight { background-color: #fff3a0; }
     </style>
   </head>
   <body>
@@ -99,7 +101,7 @@
         </thead>
         <tbody>
           {% for row in rows %}
-            <tr>
+            <tr data-keyword="{{ row.keyword }}">
               <td>{{ row.keyword }}</td>
               <td class="num">
                 <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
@@ -134,6 +136,32 @@
           tip.style.top = y + "px";
         }
 
+        var rows = document.querySelectorAll("tbody tr");
+        var highlightTimer = null;
+
+        function rowFor(keyword) {
+          for (var i = 0; i < rows.length; i++) {
+            if (rows[i].dataset.keyword === keyword) return rows[i];
+          }
+          return null;
+        }
+
+        function revealRow(keyword) {
+          var tr = rowFor(keyword);
+          if (!tr) return;
+          tip.style.display = "none";
+          tr.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (highlightTimer) {
+            clearTimeout(highlightTimer);
+            rows.forEach(function (r) { r.classList.remove("row-highlight"); });
+          }
+          tr.classList.add("row-highlight");
+          highlightTimer = setTimeout(function () {
+            tr.classList.remove("row-highlight");
+            highlightTimer = null;
+          }, 2500);
+        }
+
         document.querySelectorAll(".cloud span").forEach(function (el) {
           el.addEventListener("mouseenter", function (e) {
             titleEl.textContent = el.dataset.keyword;
@@ -145,6 +173,9 @@
           el.addEventListener("mousemove", place);
           el.addEventListener("mouseleave", function () {
             tip.style.display = "none";
+          });
+          el.addEventListener("click", function () {
+            revealRow(el.dataset.keyword);
           });
         });
       })();
