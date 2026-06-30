@@ -56,6 +56,9 @@
       }
       tbody tr { transition: background-color 0.8s ease; }
       tbody tr.row-highlight { background-color: #fff3a0; }
+      .filters { margin: 1rem 0; }
+      .filters label { display: inline-block; margin-right: 1rem; color: #444; }
+      .filters input { width: 22rem; max-width: 100%; display: block; }
     </style>
   </head>
   <body>
@@ -66,10 +69,28 @@
     </div>
 
     <h1>Keyword Dashboard</h1>
+
+    <form method="get" action="{{ url_for('dashboard.view_dashboard') }}" class="filters">
+      <label>
+        Must contain
+        <input type="text" name="must" value="{{ must }}"
+               placeholder="comma,separated — all in title/description/keywords" />
+      </label>
+      <label>
+        Cannot contain
+        <input type="text" name="cannot" value="{{ cannot }}"
+               placeholder="comma,separated — none in keywords" />
+      </label>
+      <button type="submit">Apply</button>
+      {% if must or cannot %}
+        <a href="{{ url_for('dashboard.view_dashboard') }}" style="margin-left: 0.5rem;">Clear</a>
+      {% endif %}
+    </form>
+
     <p class="hint">
-      Based on {{ total_jobs }} active opportunit{{ 'y' if total_jobs == 1 else 'ies' }}.
+      Based on {{ total_jobs }} active opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} matching the filters{% endif %}.
       Each keyword's count is the number of opportunities that list it; the
-      percentage is its share of active opportunities.
+      percentage is its share of those opportunities.
     </p>
 
     {% if cloud %}

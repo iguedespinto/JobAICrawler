@@ -6,7 +6,11 @@
     <style>
       body { font-family: Arial, sans-serif; margin: 2rem; }
       form { margin-bottom: 1.5rem; }
-      .job { border: 1px solid #ddd; padding: 1rem; margin-bottom: 1rem; }
+      .jobs-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
+      @media (min-width: 600px) { .jobs-grid { grid-template-columns: repeat(2, 1fr); } }
+      @media (min-width: 900px) { .jobs-grid { grid-template-columns: repeat(3, 1fr); } }
+      @media (min-width: 1200px) { .jobs-grid { grid-template-columns: repeat(4, 1fr); } }
+      .job { border: 1px solid #ddd; padding: 1rem; }
       .meta { color: #666; font-size: 0.9rem; }
       .pagination { margin-top: 1rem; }
       .pagination a { margin-right: 0.75rem; }
@@ -56,6 +60,7 @@
     {% endif %}
 
     {% if jobs %}
+      <div class="jobs-grid">
       {% for job in jobs %}
         <div class="job">
           <h3><a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a></h3>
@@ -75,6 +80,7 @@
           {% endif %}
         </div>
       {% endfor %}
+      </div>
     {% else %}
       <p>No jobs found.</p>
     {% endif %}
