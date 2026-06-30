@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from collections import Counter
 
-from flask import Blueprint, jsonify, render_template
+from flask import Blueprint, jsonify, render_template, request
 
 from . import get_db
 
@@ -27,19 +27,54 @@ def _get_db_or_error() -> Tuple[object, Optional[tuple]]:
     return db, None
 
 
-def aggregate_keywords(db) -> Tuple[List[Dict[str, Any]], int]:
+def split_terms(raw: Any) -> List[str]:
+    """Split a comma-separated string into lowercased, trimmed terms."""
+    return [part.strip().lower() for part in str(raw or "").split(",") if part.strip()]
+
+
+def _job_passes(job: Dict[str, Any], must: List[str], cannot: List[str]) -> bool:
+    """Apply the must-contain / cannot-contain filters to a single job.
+
+    ``must``   - every term must appear in the title, description, or keywords.
+    ``cannot`` - no term may appear in the keywords.
+    Both are case-insensitive substring checks; empty lists pass everything.
+    """
+    keywords_text = " ".join(str(k) for k in (job.get("keywords") or [])).lower()
+    haystack = " ".join(
+        [
+            str(job.get("title") or ""),
+            str(job.get("description_text") or ""),
+            keywords_text,
+        ]
+    ).lower()
+
+    if must and not all(term in haystack for term in must):
+        return False
+    if cannot and any(term in keywords_text for term in cannot):
+        return False
+    return True
+
+
+def aggregate_keywords(
+    db, must: Optional[List[str]] = None, cannot: Optional[List[str]] = None
+) -> Tuple[List[Dict[str, Any]], int]:
     """Count active opportunities per keyword (case-insensitive grouping).
 
-    Returns ``(rows, total_jobs)`` where each row has ``keyword`` (the most
-    common original spelling), ``count`` (distinct opportunities containing it)
-    and ``percent`` (share of active opportunities). Rows are sorted by count
-    descending, then keyword.
+    Only active (non-archived) opportunities that pass the optional
+    ``must``/``cannot`` filters are counted. Returns ``(rows, total_jobs)`` where
+    each row has ``keyword`` (the most common original spelling), ``count``
+    (distinct opportunities containing it) and ``percent`` (share of the counted
+    opportunities). Rows are sorted by count descending, then keyword.
     """
+    must = must or []
+    cannot = cannot or []
     counts: Counter = Counter()
     spellings: Dict[str, Counter] = {}
     total_jobs = 0
 
     for job in db.jobs.find({"archived": {"$ne": True}}):
+        if not _job_passes(job, must, cannot):
+            continue
         total_jobs += 1
         seen: set = set()
         for raw in job.get("keywords", []) or []:
@@ -96,12 +131,16 @@ def _cloud_items(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 @dashboard_bp.route("", methods=["GET"])
 def view_dashboard():
-    """Render the keyword dashboard."""
+    """Render the keyword dashboard, optionally filtered by must/cannot terms."""
     db, error = _get_db_or_error()
     if error:
         return error
 
-    rows, total_jobs = aggregate_keywords(db)
+    must_raw = request.args.get("must", "").strip()
+    cannot_raw = request.args.get("cannot", "").strip()
+    rows, total_jobs = aggregate_keywords(
+        db, must=split_terms(must_raw), cannot=split_terms(cannot_raw)
+    )
     cloud = _cloud_items(rows)
 
     return render_template(
@@ -109,4 +148,6 @@ def view_dashboard():
         rows=rows,
         cloud=cloud,
         total_jobs=total_jobs,
+        must=must_raw,
+        cannot=cannot_raw,
     )
