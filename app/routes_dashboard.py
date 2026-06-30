@@ -55,19 +55,36 @@ def _job_passes(job: Dict[str, Any], must: List[str], cannot: List[str]) -> bool
     return True
 
 
+def _proper_case(label: str) -> str:
+    """Title-case words that are entirely lowercase; leave acronyms and
+    mixed-case words (AWS, CI/CD, TypeScript, Node.js) untouched."""
+    def _cap(word: str) -> str:
+        if not word.islower():
+            return word
+        if "-" in word:
+            return "-".join(p.capitalize() for p in word.split("-"))
+        return word.capitalize()
+    return " ".join(_cap(w) for w in label.split())
+
+
 def aggregate_keywords(
     db, must: Optional[List[str]] = None, cannot: Optional[List[str]] = None
 ) -> Tuple[List[Dict[str, Any]], int]:
     """Count active opportunities per keyword (case-insensitive grouping).
 
-    Only active (non-archived) opportunities that pass the optional
-    ``must``/``cannot`` filters are counted. Returns ``(rows, total_jobs)`` where
-    each row has ``keyword`` (the most common original spelling), ``count``
-    (distinct opportunities containing it) and ``percent`` (share of the counted
-    opportunities). Rows are sorted by count descending, then keyword.
+    Keyword groups (from the ``keyword_groups`` collection) are respected:
+    variants that belong to the same group are counted under the group's
+    display name.  Ungrouped keywords still fall back to case-insensitive
+    grouping by their most common spelling.
+
+    Returns ``(rows, total_jobs)`` where each row has ``keyword``, ``count``
+    and ``percent``.  Rows are sorted by count descending, then keyword.
     """
+    from .routes_keywords import build_variant_map
+
     must = must or []
     cannot = cannot or []
+    variant_map = build_variant_map(db)
     counts: Counter = Counter()
     spellings: Dict[str, Counter] = {}
     total_jobs = 0
@@ -80,15 +97,21 @@ def aggregate_keywords(
         for raw in job.get("keywords", []) or []:
             label = str(raw).strip()
             key = label.lower()
-            if not key or key in seen:
+            if not key:
                 continue
-            seen.add(key)
-            counts[key] += 1
-            spellings.setdefault(key, Counter())[label] += 1
+            grouped = key in variant_map
+            display = variant_map[key] if grouped else key
+            display_key = display.lower()
+            if display_key in seen:
+                continue
+            seen.add(display_key)
+            counts[display_key] += 1
+            display_label = display if grouped else label
+            spellings.setdefault(display_key, Counter())[display_label] += 1
 
     rows: List[Dict[str, Any]] = []
     for key, count in counts.items():
-        label = spellings[key].most_common(1)[0][0]
+        label = _proper_case(spellings[key].most_common(1)[0][0])
         percent = round(100 * count / total_jobs, 1) if total_jobs else 0.0
         rows.append({"keyword": label, "count": count, "percent": percent})
 

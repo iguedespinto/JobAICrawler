@@ -15,7 +15,8 @@
     <div style="margin-bottom: 1rem;">
       <a href="{{ url_for('jobs.list_jobs') }}" style="margin-right: 1rem;">Jobs</a>
       <a href="{{ url_for('dashboard.view_dashboard') }}" style="margin-right: 1rem;">Dashboard</a>
-      <a href="{{ url_for('import_jobs.import_form') }}">Import Opportunities</a>
+      <a href="{{ url_for('import_jobs.import_form') }}" style="margin-right: 1rem;">Import</a>
+      <a href="{{ url_for('keywords.manage_keywords') }}">Keywords</a>
     </div>
     <h1>Your Profile</h1>
     <form method="post" action="{{ url_for('profile.update_profile') }}">
