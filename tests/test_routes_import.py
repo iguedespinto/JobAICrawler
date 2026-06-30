@@ -179,7 +179,31 @@ def test_archived_jobs_are_excluded_from_matching():
     assert rows[0]["similarity"] == 0
 
 
-def test_preview_and_commit_create_only_selected(app_client, monkeypatch):
+def _upload(app_client, payload, filename="offers.json"):
+    data = {"import_file": (io.BytesIO(payload.encode("utf-8")), filename)}
+    return app_client.post(
+        "/import/upload", data=data, content_type="multipart/form-data"
+    )
+
+
+def test_stage_jobs_appends_and_dedupes():
+    fake_db = FakeDB(jobs=[], profiles=[])
+    jobs = [
+        {"title": "Role A", "company": "Acme", "url": "https://example.com/a"},
+        {"title": "Role B", "company": "Beta", "url": "https://example.com/b"},
+    ]
+
+    first = routes_import.stage_jobs(fake_db, jobs, source="f1.json")
+    assert first == {"added": 2, "skipped": 0}
+    assert fake_db.import_staging.count_documents({}) == 2
+
+    # Re-staging the same records (e.g. another run) skips the duplicates.
+    second = routes_import.stage_jobs(fake_db, jobs, source="f2.json")
+    assert second == {"added": 0, "skipped": 2}
+    assert fake_db.import_staging.count_documents({}) == 2
+
+
+def test_upload_persists_records_in_staging(app_client, monkeypatch):
     fake_db = FakeDB(jobs=[], profiles=[])
     monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
 
@@ -189,28 +213,47 @@ def test_preview_and_commit_create_only_selected(app_client, monkeypatch):
             {"name": "Role B", "company": "Beta", "url": "https://example.com/b"},
         ]
     )
-    data = {"import_file": (io.BytesIO(payload.encode("utf-8")), "offers.json")}
-    response = app_client.post(
-        "/import/preview", data=data, content_type="multipart/form-data"
-    )
-    assert response.status_code == 200
-    body = response.data.decode("utf-8")
+    assert _upload(app_client, payload).status_code == 302
+    assert fake_db.import_staging.count_documents({}) == 2
+
+    # Records persist and render on the import page.
+    body = app_client.get("/import").data.decode("utf-8")
     assert "Role A" in body and "Role B" in body
 
-    # Commit only the first opportunity.
-    job_a = json.dumps(
-        {
-            "title": "Role A",
-            "company": "Acme",
-            "url": "https://example.com/a",
-            "keywords": [],
-        }
-    )
-    commit_response = app_client.post(
-        "/import/commit",
-        data={"select": "0", "job_0": job_a},
-    )
-    assert commit_response.status_code == 302
 
+def test_commit_imports_selected_and_removes_from_staging(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [
+            {"title": "Role A", "company": "Acme", "url": "https://example.com/a"},
+            {"title": "Role B", "company": "Beta", "url": "https://example.com/b"},
+        ],
+    )
+    role_a = fake_db.import_staging.find_one({"title": "Role A"})
+
+    response = app_client.post("/import/commit", data={"select": str(role_a["_id"])})
+    assert response.status_code == 302
+
+    # Imported into jobs and removed from staging; the unselected one remains.
     assert fake_db.jobs.find_one({"title": "Role A"}) is not None
     assert fake_db.jobs.find_one({"title": "Role B"}) is None
+    assert fake_db.import_staging.find_one({"title": "Role A"}) is None
+    assert fake_db.import_staging.find_one({"title": "Role B"}) is not None
+
+
+def test_clear_empties_staging(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Role A", "company": "Acme", "url": "https://example.com/a"}],
+    )
+    assert fake_db.import_staging.count_documents({}) == 1
+
+    response = app_client.post("/import/clear")
+    assert response.status_code == 302
+    assert fake_db.import_staging.count_documents({}) == 0
