@@ -1,0 +1,4 @@
+# Dependencies for the MCP import server (mcp_server.py).
+# Run locally only — not used by the Heroku web app.
+# pymongo and python-dotenv come from the main requirements.txt.
+mcp>=1.2
