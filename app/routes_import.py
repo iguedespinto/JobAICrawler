@@ -1,14 +1,19 @@
 """Routes for importing externally-prepared job opportunities from JSON files.
 
-The import is a two-step flow:
+Loaded records persist in a staging area (the ``import_staging`` collection)
+until they are imported or cleared, and accumulate across uploads:
 
-1. ``GET  /import``         - show the upload form.
-2. ``POST /import/preview`` - parse the uploaded JSON, match each opportunity
-   against what already exists in the database, and render a review table.
-3. ``POST /import/commit``  - create the opportunities the user selected.
+1. ``GET  /import``        - show the upload form and the current staging area,
+   each staged record matched against active jobs and other staged records.
+2. ``POST /import/upload`` - parse an uploaded JSON file and add its records to
+   the staging area (skipping ones already staged).
+3. ``POST /import/commit`` - create the selected staged opportunities and remove
+   them from staging.
+4. ``POST /import/clear``  - empty the staging area.
 
-No server-side state is held between preview and commit: each reviewed row
-carries its own data in a hidden field, so the commit request is self-contained.
+``parse_jobs`` and ``stage_jobs`` are the reusable building blocks for loading
+files into staging, intended to be shared with a future MCP server that loads
+one or more files.
 """
 
 from __future__ import annotations
@@ -20,6 +25,8 @@ from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from flask import (
     Blueprint,
     flash,
@@ -317,26 +324,95 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
     return rows
 
 
+def _staging_identity(job: Dict[str, Any]) -> str:
+    """Identity used to avoid staging the same opportunity twice."""
+    return (
+        _identifying_url(job.get("url"))
+        or _title_company_key(job.get("title"), job.get("company"))
+    )
+
+
+def stage_jobs(db, jobs: List[Dict[str, Any]], source: Optional[str] = None) -> Dict[str, int]:
+    """Append parsed opportunities to the staging area, skipping ones already staged.
+
+    This is the reusable entry point for loading files into the import staging
+    area. It is called by the HTTP upload route and is intended to be reused by
+    a future MCP server that loads one or more files. Returns ``{"added", "skipped"}``.
+    """
+    existing = {
+        _staging_identity(doc)
+        for doc in db.import_staging.find({})
+    }
+    now = _utcnow()
+    to_insert: List[Dict[str, Any]] = []
+    skipped = 0
+
+    for job in jobs:
+        identity = _staging_identity(job)
+        if not identity or identity in existing:
+            skipped += 1
+            continue
+        existing.add(identity)
+        to_insert.append(
+            {
+                "title": job.get("title"),
+                "company": job.get("company"),
+                "location": job.get("location"),
+                "url": job.get("url"),
+                "salary": job.get("salary"),
+                "keywords": job.get("keywords", []),
+                "description_text": job.get("description_text"),
+                "source_file": source,
+                "staged_at": now,
+            }
+        )
+
+    if to_insert:
+        db.import_staging.insert_many(to_insert)
+    return {"added": len(to_insert), "skipped": skipped}
+
+
+def _staged_rows(db) -> List[Dict[str, Any]]:
+    """Load staged opportunities and annotate each with its current match."""
+    staged = list(db.import_staging.find({}).sort([("staged_at", 1)]))
+    rows = match_jobs(staged, db)
+    for row in rows:
+        row["id"] = str(row["job"]["_id"])
+    return rows
+
+
 @import_bp.route("", methods=["GET"])
 def import_form():
-    """Show the JSON upload form."""
-    return render_template("import.html")
-
-
-@import_bp.route("/preview", methods=["POST"])
-def preview():
-    """Parse the uploaded file and show a review table with match annotations."""
+    """Show the upload form and the current staging area."""
     db, error = _get_db_or_error()
     if error:
         return error
 
-    upload = request.files.get("import_file")
-    if upload is None or not upload.filename:
+    rows = _staged_rows(db)
+    summary = {
+        "total": len(rows),
+        "new": sum(1 for r in rows if r["status"] == "new"),
+        "matched": sum(1 for r in rows if r["status"] == "matched"),
+        "duplicate": sum(1 for r in rows if r["status"] == "duplicate"),
+        "threshold": SIMILARITY_THRESHOLD,
+    }
+    return render_template("import.html", rows=rows, summary=summary)
+
+
+@import_bp.route("/upload", methods=["POST"])
+def upload():
+    """Parse an uploaded JSON file and add its opportunities to the staging area."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    upload_file = request.files.get("import_file")
+    if upload_file is None or not upload_file.filename:
         flash("Please choose a JSON file to import.")
         return redirect(url_for("import_jobs.import_form"))
 
     try:
-        raw_text = upload.read().decode("utf-8")
+        raw_text = upload_file.read().decode("utf-8")
         jobs = parse_jobs(raw_text)
     except (ValueError, json.JSONDecodeError, UnicodeDecodeError) as exc:
         flash(f"Could not read JSON file: {exc}")
@@ -346,42 +422,32 @@ def preview():
         flash("No job opportunities found in the file.")
         return redirect(url_for("import_jobs.import_form"))
 
-    rows = match_jobs(jobs, db)
-    # Serialize each job so the row can be resubmitted on commit without state.
-    for index, row in enumerate(rows):
-        row["index"] = index
-        row["payload"] = json.dumps(row["job"], ensure_ascii=True)
-
-    summary = {
-        "total": len(rows),
-        "new": sum(1 for r in rows if r["status"] == "new"),
-        "matched": sum(1 for r in rows if r["status"] == "matched"),
-        "duplicate": sum(1 for r in rows if r["status"] == "duplicate"),
-        "filename": upload.filename,
-        "threshold": SIMILARITY_THRESHOLD,
-    }
-    return render_template("import_preview.html", rows=rows, summary=summary)
+    result = stage_jobs(db, jobs, source=upload_file.filename)
+    flash(
+        f"Loaded {result['added']} opportunities from {upload_file.filename}"
+        f" ({result['skipped']} already staged)."
+    )
+    return redirect(url_for("import_jobs.import_form"))
 
 
 @import_bp.route("/commit", methods=["POST"])
 def commit():
-    """Create the selected opportunities in the database."""
+    """Create the selected staged opportunities, removing them from staging."""
     db, error = _get_db_or_error()
     if error:
         return error
 
-    selected_indices = request.form.getlist("select")
     now = _utcnow()
     created = 0
     skipped = 0
 
-    for index in selected_indices:
-        payload = request.form.get(f"job_{index}")
-        if not payload:
-            continue
+    for raw_id in request.form.getlist("select"):
         try:
-            job = json.loads(payload)
-        except json.JSONDecodeError:
+            oid = ObjectId(raw_id)
+        except (InvalidId, TypeError):
+            continue
+        job = db.import_staging.find_one({"_id": oid})
+        if job is None:
             continue
 
         # Use the URL as the dedup key only when it identifies a single posting.
@@ -416,6 +482,20 @@ def commit():
             created += 1
         else:
             skipped += 1
+        # Imported records leave the staging area.
+        db.import_staging.delete_one({"_id": oid})
 
     flash(f"Imported {created} new opportunities ({skipped} already existed).")
-    return redirect(url_for("jobs.list_jobs"))
+    return redirect(url_for("import_jobs.import_form"))
+
+
+@import_bp.route("/clear", methods=["POST"])
+def clear():
+    """Remove all opportunities from the staging area."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    result = db.import_staging.delete_many({})
+    flash(f"Cleared {result.deleted_count} staged opportunities.")
+    return redirect(url_for("import_jobs.import_form"))

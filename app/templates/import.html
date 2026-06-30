@@ -5,10 +5,26 @@
     <title>Import Opportunities</title>
     <style>
       body { font-family: Arial, sans-serif; margin: 2rem; }
+      .nav a { margin-right: 1rem; }
       .hint { color: #666; font-size: 0.9rem; }
       .flash { background: #fff3cd; border: 1px solid #ffe69c; padding: 0.75rem; margin-bottom: 1rem; }
-      .nav a { margin-right: 1rem; }
       pre { background: #f7f7f7; padding: 0.75rem; overflow-x: auto; }
+      .summary { margin: 1rem 0; }
+      .summary span { margin-right: 1.5rem; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; vertical-align: top; }
+      th { background: #f2f2f2; }
+      tr.matched { background: #fdecea; }
+      tr.duplicate { background: #fff3cd; }
+      tr.new { background: #eafaf1; }
+      .badge { font-size: 0.8rem; padding: 0.1rem 0.4rem; border-radius: 3px; }
+      .badge.new { background: #2e7d32; color: #fff; }
+      .badge.matched { background: #c62828; color: #fff; }
+      .badge.duplicate { background: #b8860b; color: #fff; }
+      .reason { color: #666; font-size: 0.8rem; }
+      .keywords { color: #555; font-size: 0.85rem; }
+      .actions { margin: 1rem 0; }
+      .actions button { margin-right: 0.5rem; }
     </style>
   </head>
   <body>
@@ -28,14 +44,22 @@
       {% endif %}
     {% endwith %}
 
-    <p>Upload a JSON file of job opportunities. The next screen lets you review
-       each one and matches them against opportunities already in the database
-       before anything is created.</p>
+    <p>Upload a JSON file of job opportunities. Loaded records stay in the
+       staging area below — across uploads — until you import or clear them.
+       Each is matched against active jobs already in the database and against
+       other staged records.</p>
 
-    <form method="post" action="{{ url_for('import_jobs.preview') }}" enctype="multipart/form-data">
+    <form method="post" action="{{ url_for('import_jobs.upload') }}" enctype="multipart/form-data">
       <input type="file" name="import_file" accept=".json,application/json" />
-      <button type="submit">Preview</button>
+      <button type="submit">Load file</button>
     </form>
+
+    {% if rows %}
+      <div class="actions">
+        <button type="submit" form="commit-form">Import selected</button>
+        <button type="submit" form="clear-form">Clear staging</button>
+      </div>
+    {% endif %}
 
     <h2>Expected format</h2>
     <p class="hint">A JSON array of objects (a single object is also accepted):</p>
@@ -49,5 +73,84 @@
     "keywords": ["Python", "Flask", "MongoDB"]
   }
 ]</pre>
+
+    {% if rows %}
+      <h2>Staging area</h2>
+      <div class="summary">
+        <span><strong>{{ summary.total }}</strong> staged</span>
+        <span><strong>{{ summary.new }}</strong> new</span>
+        <span><strong>{{ summary.matched }}</strong> match existing</span>
+        <span><strong>{{ summary.duplicate }}</strong> duplicate</span>
+      </div>
+      <p class="hint">New opportunities are pre-selected; likely duplicates
+        (description similarity &ge; {{ summary.threshold }}%) are not.</p>
+
+      <!-- Forms are empty; their controls/checkboxes reference them via form="...". -->
+      <form id="commit-form" method="post" action="{{ url_for('import_jobs.commit') }}"></form>
+      <form id="clear-form" method="post" action="{{ url_for('import_jobs.clear') }}"
+            onsubmit="return confirm('Clear all {{ summary.total }} staged opportunities?');"></form>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Import</th>
+            <th>Status</th>
+            <th>Title</th>
+            <th>Company</th>
+            <th>Similarity</th>
+            <th>Salary</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr class="{{ row.status }}">
+              <td>
+                <input type="checkbox" name="select" value="{{ row.id }}" form="commit-form"
+                       {% if row.status == 'new' %}checked{% endif %} />
+              </td>
+              <td>
+                <span class="badge {{ row.status }}">{{ row.status }}</span>
+                {% if row.reason %}
+                  <div class="reason">
+                    {% if row.reason == 'url' %}same URL exists
+                    {% elif row.reason == 'title_company' %}same title + company exists
+                    {% elif row.reason == 'similar_description' %}similar description to an active job
+                    {% elif row.reason == 'duplicate_in_file' %}repeated in staging
+                    {% elif row.reason == 'similar_in_file' %}similar to another staged row
+                    {% endif %}
+                  </div>
+                {% endif %}
+              </td>
+              <td>
+                {% if row.job.url %}
+                  <a href="{{ row.job.url }}" target="_blank" rel="noopener">{{ row.job.title }}</a>
+                {% else %}
+                  {{ row.job.title }}
+                {% endif %}
+                {% if row.job.keywords %}
+                  <div class="keywords">{{ row.job.keywords | join(', ') }}</div>
+                {% endif %}
+              </td>
+              <td>{{ row.job.company }}</td>
+              <td>
+                {{ row.similarity }}%
+                {% if row.match_label %}
+                  <div class="reason">
+                    {% if row.match_url %}
+                      <a href="{{ row.match_url }}" target="_blank" rel="noopener">{{ row.match_label }}</a>
+                    {% else %}
+                      {{ row.match_label }}
+                    {% endif %}
+                  </div>
+                {% endif %}
+              </td>
+              <td>{{ row.job.salary or 'n/a' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="hint">The staging area is empty.</p>
+    {% endif %}
   </body>
 </html>

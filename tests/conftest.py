@@ -16,6 +16,11 @@ class FakeUpdateResult:
         self.matched_count = matched_count
 
 
+class FakeDeleteResult:
+    def __init__(self, deleted_count: int = 0) -> None:
+        self.deleted_count = deleted_count
+
+
 def _get_nested(doc: Dict[str, Any], dotted_key: str) -> Any:
     current = doc
     for part in dotted_key.split("."):
@@ -137,11 +142,41 @@ class FakeCollection:
             doc.update(update["$set"])
         return FakeUpdateResult(matched_count=1)
 
+    def insert_one(self, doc: Dict[str, Any]) -> FakeUpdateResult:
+        if "_id" not in doc:
+            doc["_id"] = ObjectId()
+        self._docs.append(doc)
+        return FakeUpdateResult(upserted_id=doc["_id"], matched_count=1)
+
+    def insert_many(self, docs: List[Dict[str, Any]]) -> None:
+        for doc in docs:
+            self.insert_one(doc)
+
+    def delete_one(self, filter_doc: Dict[str, Any]) -> FakeDeleteResult:
+        for index, doc in enumerate(self._docs):
+            if _matches_filter(doc, filter_doc):
+                del self._docs[index]
+                return FakeDeleteResult(deleted_count=1)
+        return FakeDeleteResult(deleted_count=0)
+
+    def delete_many(self, filter_doc: Dict[str, Any]) -> FakeDeleteResult:
+        filter_doc = filter_doc or {}
+        kept = [doc for doc in self._docs if not _matches_filter(doc, filter_doc)]
+        removed = len(self._docs) - len(kept)
+        self._docs[:] = kept
+        return FakeDeleteResult(deleted_count=removed)
+
 
 class FakeDB:
-    def __init__(self, jobs: Optional[List[Dict[str, Any]]] = None, profiles: Optional[List[Dict[str, Any]]] = None) -> None:
+    def __init__(
+        self,
+        jobs: Optional[List[Dict[str, Any]]] = None,
+        profiles: Optional[List[Dict[str, Any]]] = None,
+        import_staging: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
         self.jobs = FakeCollection(jobs)
         self.profiles = FakeCollection(profiles)
+        self.import_staging = FakeCollection(import_staging)
 
 
 class FakeClient:
