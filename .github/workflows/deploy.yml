@@ -11,9 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Deploy to Heroku
-        uses: akhileshns/heroku-deploy@v3.13.15
         with:
-          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
-          heroku_app_name: jobaicrawler-igp
-          heroku_email: iguedespinto@yahoo.com
+          # Heroku rejects shallow pushes, so fetch the full history.
+          fetch-depth: 0
+      - name: Push to Heroku
+        env:
+          HEROKU_API_KEY: ${{ secrets.HEROKU_API_KEY }}
+        run: |
+          git push --force \
+            "https://heroku:${HEROKU_API_KEY}@git.heroku.com/jobaicrawler-igp.git" \
+            HEAD:refs/heads/main
