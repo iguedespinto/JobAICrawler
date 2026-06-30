@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "jobaicrawler-import": {
+      "command": "/Users/ivanpinto/Documents/GitHub/JobAICrawler/.venv/bin/python",
+      "args": ["/Users/ivanpinto/Documents/GitHub/JobAICrawler/mcp_server.py"]
+    }
+  }
+}
