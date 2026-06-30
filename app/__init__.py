@@ -69,8 +69,10 @@ def _register_blueprints(app: Flask) -> None:
     from .routes_profile import profile_bp
     from .routes_import import import_bp
     from .routes_dashboard import dashboard_bp
+    from .routes_keywords import keywords_bp
 
     app.register_blueprint(jobs_bp)
     app.register_blueprint(profile_bp)
     app.register_blueprint(import_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(keywords_bp)

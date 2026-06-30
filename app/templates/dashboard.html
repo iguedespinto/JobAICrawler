@@ -56,15 +56,98 @@
       }
       tbody tr { transition: background-color 0.8s ease; }
       tbody tr.row-highlight { background-color: #fff3a0; }
+      th.sortable { cursor: pointer; user-select: none; }
+      th.sortable:hover { background: #e0e0e0; }
+      th.sortable::after { content: " ⇅"; color: #aaa; font-size: 0.8em; }
+      th.sortable.asc::after { content: " ↑"; color: #1f6feb; }
+      th.sortable.desc::after { content: " ↓"; color: #1f6feb; }
       .filters { margin: 1rem 0; }
       .filters label { display: inline-block; margin-right: 1rem; color: #444; }
       .filters input { width: 22rem; max-width: 100%; display: block; }
+
+      /* Drag-and-drop states */
+      .cloud span[draggable="true"] { cursor: grab; }
+      .cloud span.dragging { opacity: 0.4; }
+      .cloud span.drop-target {
+        outline: 2px solid #1f6feb;
+        outline-offset: 2px;
+        border-radius: 3px;
+        background: #e6f0ff;
+      }
+      td.kw-draggable { cursor: grab; }
+      td.kw-draggable.dragging { opacity: 0.4; }
+      tr.drop-target td:first-child {
+        outline: 2px solid #1f6feb;
+        outline-offset: -2px;
+        background: #e6f0ff;
+      }
+
+      /* Merge dialog */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        z-index: 100;
+        justify-content: center;
+        align-items: center;
+      }
+      .modal-overlay.open { display: flex; }
+      .modal {
+        background: #fff;
+        border-radius: 8px;
+        padding: 1.5rem 2rem;
+        max-width: 520px;
+        width: 90%;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+      }
+      .modal h2 { margin-top: 0; font-size: 1.15rem; }
+      .modal .merge-section { margin: 0.8rem 0; }
+      .modal .merge-section h3 { margin: 0 0 0.3rem; font-size: 0.95rem; color: #555; }
+      .modal .variant-tag {
+        display: inline-block;
+        background: #e6f0ff;
+        border-radius: 3px;
+        padding: 0.15rem 0.5rem;
+        margin: 0.15rem 0.2rem;
+        font-size: 0.85rem;
+      }
+      .modal .result-section {
+        background: #f0faf0;
+        border: 1px solid #b2dfb2;
+        border-radius: 4px;
+        padding: 0.6rem 0.8rem;
+        margin: 0.8rem 0;
+      }
+      .modal .result-section h3 { margin: 0 0 0.3rem; font-size: 0.95rem; color: #2a7a2a; }
+      .modal label { display: block; margin: 0.8rem 0 0.3rem; font-weight: 600; font-size: 0.95rem; }
+      .modal input[type="text"] {
+        width: 100%;
+        padding: 0.4rem 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-size: 1rem;
+        box-sizing: border-box;
+      }
+      .modal .btn-row { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.2rem; }
+      .modal button {
+        padding: 0.45rem 1.2rem;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.95rem;
+        cursor: pointer;
+      }
+      .modal .btn-cancel { background: #e0e0e0; color: #333; }
+      .modal .btn-cancel:hover { background: #ccc; }
+      .modal .btn-merge { background: #1f6feb; color: #fff; }
+      .modal .btn-merge:hover { background: #1759c4; }
     </style>
   </head>
   <body>
     <div class="nav">
       <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
       <a href="{{ url_for('import_jobs.import_form') }}">Import</a>
+      <a href="{{ url_for('keywords.manage_keywords') }}">Keywords</a>
       <a href="{{ url_for('profile.get_profile') }}">Profile</a>
     </div>
 
@@ -111,19 +194,46 @@
       <p>No keywords yet. Import some opportunities to populate the dashboard.</p>
     {% endif %}
 
+    <!-- Merge dialog -->
+    <div class="modal-overlay" id="merge-overlay">
+      <div class="modal">
+        <h2>Merge Keywords</h2>
+        <div class="merge-section">
+          <h3>Keyword A</h3>
+          <strong id="merge-a-name"></strong>
+          <div id="merge-a-variants"></div>
+        </div>
+        <div class="merge-section">
+          <h3>Keyword B</h3>
+          <strong id="merge-b-name"></strong>
+          <div id="merge-b-variants"></div>
+        </div>
+        <label for="merge-display">Display name</label>
+        <input type="text" id="merge-display" />
+        <div class="result-section">
+          <h3>Resulting group</h3>
+          <div id="merge-result-variants"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn-cancel" onclick="closeMerge()">Cancel</button>
+          <button class="btn-merge" onclick="confirmMerge()">Merge</button>
+        </div>
+      </div>
+    </div>
+
     {% if rows %}
       <table>
         <thead>
           <tr>
-            <th>Keyword</th>
-            <th class="num">Opportunities</th>
-            <th class="num">% of total</th>
+            <th class="sortable" data-sort="keyword">Keyword</th>
+            <th class="num sortable desc" data-sort="count">Opportunities</th>
+            <th class="num sortable" data-sort="percent">% of total</th>
           </tr>
         </thead>
         <tbody>
           {% for row in rows %}
             <tr data-keyword="{{ row.keyword }}">
-              <td>{{ row.keyword }}</td>
+              <td draggable="true" class="kw-draggable" data-keyword="{{ row.keyword }}">{{ row.keyword }}</td>
               <td class="num">
                 <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
                    title="Show these opportunities">{{ row.count }}</a>
@@ -135,6 +245,13 @@
             </tr>
           {% endfor %}
         </tbody>
+        <tfoot>
+          <tr style="font-weight: 700; background: #f2f2f2;">
+            <td>Total: {{ rows|length }} keywords</td>
+            <td class="num">{{ total_jobs }} opportunities</td>
+            <td class="num"></td>
+          </tr>
+        </tfoot>
       </table>
     {% endif %}
 
@@ -150,7 +267,6 @@
         function place(e) {
           var x = e.pageX + OFFSET;
           var y = e.pageY + OFFSET;
-          // Keep the tip within the viewport horizontally.
           var maxX = window.scrollX + document.documentElement.clientWidth - tip.offsetWidth - 4;
           if (x > maxX) x = e.pageX - tip.offsetWidth - OFFSET;
           tip.style.left = x + "px";
@@ -183,22 +299,248 @@
           }, 2500);
         }
 
+        /* ── Drag-and-drop merge ─────────────────────────── */
+
+        var dragSrc = null;
+        var groupsCache = null;
+
+        function loadGroups(cb) {
+          fetch("/keywords/groups")
+            .then(function (r) { return r.json(); })
+            .then(function (data) { groupsCache = data; cb(data); })
+            .catch(function () { groupsCache = []; cb([]); });
+        }
+
+        function findGroup(groups, keyword) {
+          var key = keyword.toLowerCase();
+          for (var i = 0; i < groups.length; i++) {
+            if (groups[i].variants.indexOf(key) !== -1) return groups[i];
+          }
+          return null;
+        }
+
+        function tagHtml(items) {
+          return items.map(function (v) {
+            return '<span class="variant-tag">' + v + '</span>';
+          }).join(" ");
+        }
+
+        function updateResultPreview() {
+          var display = document.getElementById("merge-display").value.trim();
+          var aVars = (window._mergeAGroup ? window._mergeAGroup.variants : [window._mergeA.toLowerCase()]);
+          var bVars = (window._mergeBGroup ? window._mergeBGroup.variants : [window._mergeB.toLowerCase()]);
+          var all = {};
+          aVars.forEach(function (v) { all[v] = true; });
+          bVars.forEach(function (v) { all[v] = true; });
+          if (display) all[display.toLowerCase()] = true;
+          var sorted = Object.keys(all).sort();
+          document.getElementById("merge-result-variants").innerHTML = tagHtml(sorted);
+        }
+
+        function openMerge(kwA, kwB) {
+          loadGroups(function (groups) {
+            var gA = findGroup(groups, kwA);
+            var gB = findGroup(groups, kwB);
+            window._mergeA = kwA;
+            window._mergeB = kwB;
+            window._mergeAGroup = gA;
+            window._mergeBGroup = gB;
+
+            document.getElementById("merge-a-name").textContent = kwA;
+            document.getElementById("merge-b-name").textContent = kwB;
+            document.getElementById("merge-a-variants").innerHTML =
+              gA ? tagHtml(gA.variants) : '<span class="variant-tag">' + kwA.toLowerCase() + '</span>';
+            document.getElementById("merge-b-variants").innerHTML =
+              gB ? tagHtml(gB.variants) : '<span class="variant-tag">' + kwB.toLowerCase() + '</span>';
+
+            var display = document.getElementById("merge-display");
+            display.value = kwB;
+            updateResultPreview();
+            display.addEventListener("input", updateResultPreview);
+            document.getElementById("merge-overlay").classList.add("open");
+          });
+        }
+
+        window.closeMerge = function () {
+          document.getElementById("merge-overlay").classList.remove("open");
+          document.getElementById("merge-display").removeEventListener("input", updateResultPreview);
+        };
+
+        window.confirmMerge = function () {
+          var display = document.getElementById("merge-display").value.trim();
+          if (!display) { alert("Please enter a display name."); return; }
+
+          fetch("/keywords/merge", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              display: display,
+              keyword_a: window._mergeA,
+              keyword_b: window._mergeB,
+            }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.ok) {
+                closeMerge();
+                var activeTh = document.querySelector("th.sortable.asc, th.sortable.desc");
+                if (activeTh) {
+                  sessionStorage.setItem("kw-sort", JSON.stringify({
+                    col: activeTh.dataset.sort,
+                    dir: activeTh.classList.contains("asc") ? "asc" : "desc",
+                  }));
+                }
+                location.reload();
+              } else {
+                alert("Error: " + (data.error || "unknown"));
+              }
+            })
+            .catch(function (err) { alert("Request failed: " + err); });
+        };
+
+        /* ── Wire up cloud spans ─────────────────────────── */
+
         document.querySelectorAll(".cloud span").forEach(function (el) {
+          el.setAttribute("draggable", "true");
+
           el.addEventListener("mouseenter", function (e) {
+            if (dragSrc) return;
             titleEl.textContent = el.dataset.keyword;
             countEl.textContent = el.dataset.count;
             percentEl.textContent = el.dataset.percent + "%";
             tip.style.display = "block";
             place(e);
           });
-          el.addEventListener("mousemove", place);
+          el.addEventListener("mousemove", function (e) {
+            if (!dragSrc) place(e);
+          });
           el.addEventListener("mouseleave", function () {
             tip.style.display = "none";
           });
           el.addEventListener("click", function () {
-            revealRow(el.dataset.keyword);
+            if (!dragSrc) revealRow(el.dataset.keyword);
+          });
+
+          el.addEventListener("dragstart", function (e) {
+            dragSrc = el;
+            el.classList.add("dragging");
+            tip.style.display = "none";
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", el.dataset.keyword);
+          });
+          el.addEventListener("dragend", clearDragState);
+          el.addEventListener("dragover", handleDragOver);
+          el.addEventListener("dragleave", handleDragLeave);
+          el.addEventListener("drop", handleDrop);
+        });
+
+        /* ── Shared drag handlers for cloud + table ──── */
+
+        function clearDragState() {
+          if (dragSrc) dragSrc.classList.remove("dragging");
+          dragSrc = null;
+          document.querySelectorAll(".drop-target").forEach(function (el) {
+            el.classList.remove("drop-target");
+          });
+        }
+
+        function dragKeyword(el) {
+          return el.dataset.keyword || el.closest("tr").dataset.keyword;
+        }
+
+        function handleDragOver(e) {
+          if (!dragSrc) return;
+          var targetKw = dragKeyword(this);
+          var srcKw = dragKeyword(dragSrc);
+          if (targetKw && srcKw !== targetKw) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            var highlight = this.tagName === "TD" ? this.closest("tr") : this;
+            highlight.classList.add("drop-target");
+          }
+        }
+
+        function handleDragLeave() {
+          var el = this.tagName === "TD" ? this.closest("tr") : this;
+          el.classList.remove("drop-target");
+        }
+
+        function handleDrop(e) {
+          e.preventDefault();
+          var el = this.tagName === "TD" ? this.closest("tr") : this;
+          el.classList.remove("drop-target");
+          if (!dragSrc) return;
+          var kwA = dragKeyword(dragSrc);
+          var kwB = dragKeyword(this);
+          if (!kwA || !kwB || kwA === kwB) return;
+          openMerge(kwA, kwB);
+        }
+
+        /* ── Table row drag-and-drop ─────────────────── */
+
+        document.querySelectorAll("td.kw-draggable").forEach(function (td) {
+          td.addEventListener("dragstart", function (e) {
+            dragSrc = td;
+            td.classList.add("dragging");
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", td.dataset.keyword);
+          });
+          td.addEventListener("dragend", clearDragState);
+          td.addEventListener("dragover", handleDragOver);
+          td.addEventListener("dragleave", handleDragLeave);
+          td.addEventListener("drop", handleDrop);
+        });
+
+        document.getElementById("merge-overlay").addEventListener("click", function (e) {
+          if (e.target === this) closeMerge();
+        });
+
+        /* ── Column sorting ──────────────────────────── */
+
+        document.querySelectorAll("th.sortable").forEach(function (th) {
+          th.addEventListener("click", function () {
+            var col = th.dataset.sort;
+            var wasAsc = th.classList.contains("asc");
+            var wasDesc = th.classList.contains("desc");
+            var dir = wasAsc ? "desc" : (wasDesc ? "asc" : (col === "keyword" ? "asc" : "desc"));
+            applySort(col, dir);
           });
         });
+
+        /* ── Restore sort after merge reload ─────────── */
+
+        function applySort(col, dir) {
+          document.querySelectorAll("th.sortable").forEach(function (h) {
+            h.classList.remove("asc", "desc");
+          });
+          var th = document.querySelector('th.sortable[data-sort="' + col + '"]');
+          if (th) th.classList.add(dir);
+
+          var tbody = document.querySelector("table tbody");
+          if (!tbody) return;
+          var trs = Array.from(tbody.querySelectorAll("tr"));
+          trs.sort(function (a, b) {
+            var va, vb;
+            if (col === "keyword") {
+              va = a.dataset.keyword.toLowerCase();
+              vb = b.dataset.keyword.toLowerCase();
+              return dir === "asc" ? va.localeCompare(vb) : vb.localeCompare(va);
+            }
+            var cells = col === "count" ? 1 : 2;
+            va = parseFloat(a.children[cells].textContent) || 0;
+            vb = parseFloat(b.children[cells].textContent) || 0;
+            return dir === "asc" ? va - vb : vb - va;
+          });
+          trs.forEach(function (tr) { tbody.appendChild(tr); });
+          rows = document.querySelectorAll("tbody tr");
+        }
+
+        var saved = sessionStorage.getItem("kw-sort");
+        if (saved) {
+          sessionStorage.removeItem("kw-sort");
+          var s = JSON.parse(saved);
+          applySort(s.col, s.dir);
+        }
       })();
     </script>
   </body>

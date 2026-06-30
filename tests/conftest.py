@@ -68,7 +68,11 @@ def _matches_filter(doc: Dict[str, Any], filter_doc: Dict[str, Any]) -> bool:
             else:
                 return False
         else:
-            if _get_nested(doc, key) != value:
+            target = _get_nested(doc, key)
+            if isinstance(target, list):
+                if value not in target:
+                    return False
+            elif target != value:
                 return False
     return True
 
@@ -173,10 +177,12 @@ class FakeDB:
         jobs: Optional[List[Dict[str, Any]]] = None,
         profiles: Optional[List[Dict[str, Any]]] = None,
         import_staging: Optional[List[Dict[str, Any]]] = None,
+        keyword_groups: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         self.jobs = FakeCollection(jobs)
         self.profiles = FakeCollection(profiles)
         self.import_staging = FakeCollection(import_staging)
+        self.keyword_groups = FakeCollection(keyword_groups)
 
 
 class FakeClient:

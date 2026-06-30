@@ -50,12 +50,17 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     # Exact (case-insensitive) keyword match against the keywords array, used by
     # the dashboard "Opportunities" links to show the jobs behind a count.
+    # If the keyword belongs to a group, match any of the group's variants.
     keyword = request.args.get("keyword", "").strip()
     if keyword:
-        filters["keywords"] = {
-            "$regex": f"^{re.escape(keyword)}$",
-            "$options": "i",
-        }
+        from .routes_keywords import expand_keyword
+        db = get_db()
+        variants = expand_keyword(db, keyword) if db is not None else [keyword]
+        if len(variants) > 1:
+            pattern = "|".join(f"^{re.escape(v)}$" for v in variants)
+        else:
+            pattern = f"^{re.escape(keyword)}$"
+        filters["keywords"] = {"$regex": pattern, "$options": "i"}
         echo["keyword"] = keyword
 
     # Active jobs only by default; ?archived=1 shows the archived ones instead.
