@@ -1,0 +1,19 @@
+name: Deploy to Heroku
+
+# Deploys to Heroku on every push to main (e.g. when a PR is merged).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy to Heroku
+        uses: akhileshns/heroku-deploy@v3.13.15
+        with:
+          heroku_api_key: ${{ secrets.HEROKU_API_KEY }}
+          heroku_app_name: jobaicrawler-igp
+          heroku_email: iguedespinto@yahoo.com
