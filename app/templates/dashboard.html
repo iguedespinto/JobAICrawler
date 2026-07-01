@@ -164,14 +164,21 @@
         <input type="text" name="cannot" value="{{ cannot }}"
                placeholder="comma,separated — none in keywords" />
       </label>
+      <label>
+        Show
+        <select name="scope">
+          <option value="active" {% if scope != 'all' %}selected{% endif %}>Active only</option>
+          <option value="all" {% if scope == 'all' %}selected{% endif %}>All</option>
+        </select>
+      </label>
       <button type="submit">Apply</button>
-      {% if must or cannot %}
+      {% if must or cannot or scope == 'all' %}
         <a href="{{ url_for('dashboard.view_dashboard') }}" style="margin-left: 0.5rem;">Clear</a>
       {% endif %}
     </form>
 
     <p class="hint">
-      Based on {{ total_jobs }} active opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} matching the filters{% endif %}.
+      Based on {{ total_jobs }} {% if scope == 'all' %}total{% else %}active{% endif %} opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} matching the filters{% endif %}.
       Each keyword's count is the number of opportunities that list it; the
       percentage is its share of those opportunities.
     </p>

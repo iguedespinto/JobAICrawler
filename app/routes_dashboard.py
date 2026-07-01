@@ -68,9 +68,15 @@ def _proper_case(label: str) -> str:
 
 
 def aggregate_keywords(
-    db, must: Optional[List[str]] = None, cannot: Optional[List[str]] = None
+    db,
+    must: Optional[List[str]] = None,
+    cannot: Optional[List[str]] = None,
+    include_archived: bool = False,
 ) -> Tuple[List[Dict[str, Any]], int]:
-    """Count active opportunities per keyword (case-insensitive grouping).
+    """Count opportunities per keyword (case-insensitive grouping).
+
+    By default only active (non-archived) opportunities are counted; pass
+    ``include_archived=True`` to count all of them.
 
     Keyword groups (from the ``keyword_groups`` collection) are respected:
     variants that belong to the same group are counted under the group's
@@ -89,7 +95,8 @@ def aggregate_keywords(
     spellings: Dict[str, Counter] = {}
     total_jobs = 0
 
-    for job in db.jobs.find({"archived": {"$ne": True}}):
+    job_filter: Dict[str, Any] = {} if include_archived else {"archived": {"$ne": True}}
+    for job in db.jobs.find(job_filter):
         if not _job_passes(job, must, cannot):
             continue
         total_jobs += 1
@@ -161,8 +168,12 @@ def view_dashboard():
 
     must_raw = request.args.get("must", "").strip()
     cannot_raw = request.args.get("cannot", "").strip()
+    include_archived = request.args.get("scope") == "all"
     rows, total_jobs = aggregate_keywords(
-        db, must=split_terms(must_raw), cannot=split_terms(cannot_raw)
+        db,
+        must=split_terms(must_raw),
+        cannot=split_terms(cannot_raw),
+        include_archived=include_archived,
     )
     cloud = _cloud_items(rows)
 
@@ -173,4 +184,5 @@ def view_dashboard():
         total_jobs=total_jobs,
         must=must_raw,
         cannot=cannot_raw,
+        scope="all" if include_archived else "active",
     )

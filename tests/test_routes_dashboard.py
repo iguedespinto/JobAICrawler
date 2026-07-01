@@ -21,6 +21,19 @@ def _db():
     )
 
 
+def test_aggregate_excludes_archived_by_default():
+    rows, total = routes_dashboard.aggregate_keywords(_db())
+    assert total == 3  # archived job excluded
+    assert "go" not in {r["keyword"].lower() for r in rows}
+
+
+def test_aggregate_includes_archived_when_requested():
+    rows, total = routes_dashboard.aggregate_keywords(_db(), include_archived=True)
+    assert total == 4  # archived job now counted
+    by_keyword = {r["keyword"].lower(): r for r in rows}
+    assert by_keyword["go"]["count"] == 1
+
+
 def test_aggregate_keywords_counts_percent_and_sort():
     rows, total = routes_dashboard.aggregate_keywords(_db())
 
