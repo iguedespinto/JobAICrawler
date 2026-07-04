@@ -150,22 +150,13 @@ def _job_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def find_jobs_in_db(
-    db,
-    query: Optional[str] = None,
-    company: Optional[str] = None,
-    keyword: Optional[str] = None,
-    include_archived: bool = False,
-    limit: int = 20,
-) -> List[Dict[str, Any]]:
-    """Retrieve job offers from the database with optional filters.
-
-    - ``query``: case-insensitive substring across title, keywords, description.
-    - ``company``: case-insensitive substring on company.
-    - ``keyword``: exact (case-insensitive) match against the keywords array.
-    - ``include_archived``: include archived jobs (default: active only).
-    - ``limit``: max results (1-100), newest first.
-    """
+def _build_job_filter(
+    query: Optional[str],
+    company: Optional[str],
+    keyword: Optional[str],
+    include_archived: bool,
+) -> Dict[str, Any]:
+    """Build the Mongo filter shared by find/count."""
     filt: Dict[str, Any] = {}
     if not include_archived:
         filt["archived"] = {"$ne": True}
@@ -180,9 +171,53 @@ def find_jobs_in_db(
             {"keywords": regex},
             {"description_text": regex},
         ]
+    return filt
 
+
+def count_jobs_in_db(
+    db,
+    query: Optional[str] = None,
+    company: Optional[str] = None,
+    keyword: Optional[str] = None,
+    include_archived: bool = False,
+) -> int:
+    """Count job offers matching the filters (for pagination)."""
+    return db.jobs.count_documents(
+        _build_job_filter(query, company, keyword, include_archived)
+    )
+
+
+def find_jobs_in_db(
+    db,
+    query: Optional[str] = None,
+    company: Optional[str] = None,
+    keyword: Optional[str] = None,
+    include_archived: bool = False,
+    page: int = 1,
+    limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """Retrieve one page of job offers from the database with optional filters.
+
+    - ``query``: case-insensitive substring across title, keywords, description.
+    - ``company``: case-insensitive substring on company.
+    - ``keyword``: exact (case-insensitive) match against the keywords array.
+    - ``include_archived``: include archived jobs (default: active only).
+    - ``page``: 1-based page number.
+    - ``limit``: page size (1-100), newest first.
+    """
+    filt = _build_job_filter(query, company, keyword, include_archived)
     limit = max(1, min(int(limit), 100))
-    cursor = db.jobs.find(filt).sort([("created_at", -1)]).limit(limit)
+    page = max(1, int(page))
+    skip = (page - 1) * limit
+    # Tie-break on _id so the ordering is a stable total order across pages;
+    # sorting by created_at alone (non-unique / sometimes missing) would let
+    # skip/limit return overlapping or missing rows between pages.
+    cursor = (
+        db.jobs.find(filt)
+        .sort([("created_at", -1), ("_id", -1)])
+        .skip(skip)
+        .limit(limit)
+    )
     return [_job_summary(doc) for doc in cursor]
 
 
@@ -226,31 +261,45 @@ def find_jobs(
     company: str = "",
     keyword: str = "",
     include_archived: bool = False,
+    page: int = 1,
     limit: int = 20,
 ) -> Dict[str, Any]:
-    """Retrieve job offers from the database.
+    """Retrieve a page of job offers from the database.
 
     Args:
         query: Case-insensitive text to match in title, keywords or description.
         company: Case-insensitive company filter.
         keyword: Exact keyword (from the keywords array) to filter by.
         include_archived: Include archived jobs (default: active only).
-        limit: Maximum number of results (1-100), newest first.
+        page: 1-based page number (use with total_pages / has_more to iterate).
+        limit: Page size (1-100), newest first.
 
-    Returns a list of jobs, each with its id, fields, archived flag and
-    user_status. Use the id with update_job_status to change a job's status.
+    Returns the page of jobs plus pagination metadata (total, page, limit,
+    total_pages, has_more). Each job has an id to use with update_job_status.
     """
     try:
         db = _get_db()
-        jobs = find_jobs_in_db(
-            db,
+        opts = dict(
             query=query or None,
             company=company or None,
             keyword=keyword or None,
             include_archived=include_archived,
-            limit=limit,
         )
-        return {"count": len(jobs), "jobs": jobs}
+        total = count_jobs_in_db(db, **opts)
+        jobs = find_jobs_in_db(db, page=page, limit=limit, **opts)
+
+        limit_c = max(1, min(int(limit), 100))
+        page_c = max(1, int(page))
+        total_pages = (total + limit_c - 1) // limit_c if total else 0
+        return {
+            "jobs": jobs,
+            "count": len(jobs),
+            "total": total,
+            "page": page_c,
+            "limit": limit_c,
+            "total_pages": total_pages,
+            "has_more": page_c < total_pages,
+        }
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
