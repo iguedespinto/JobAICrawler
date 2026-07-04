@@ -106,3 +106,22 @@ def test_update_job_status_validates():
         mcp_server.update_job_status_in_db(db, jid)  # nothing to update
     with _pytest.raises(ValueError):
         mcp_server.update_job_status_in_db(db, str(ObjectId()), archived=True)  # not found
+
+
+def test_find_jobs_pagination_covers_all_without_overlap():
+    jobs = [
+        {"_id": ObjectId(), "title": f"Job {i}", "company": "Acme", "keywords": ["Python"]}
+        for i in range(5)
+    ]
+    db = FakeDB(jobs=jobs, profiles=[])
+
+    assert mcp_server.count_jobs_in_db(db, keyword="python") == 5
+
+    p1 = mcp_server.find_jobs_in_db(db, keyword="python", page=1, limit=2)
+    p2 = mcp_server.find_jobs_in_db(db, keyword="python", page=2, limit=2)
+    p3 = mcp_server.find_jobs_in_db(db, keyword="python", page=3, limit=2)
+    p4 = mcp_server.find_jobs_in_db(db, keyword="python", page=4, limit=2)
+
+    assert [len(p1), len(p2), len(p3), len(p4)] == [2, 2, 1, 0]
+    ids = {j["id"] for j in p1 + p2 + p3}
+    assert len(ids) == 5  # every record reachable, no page overlap
