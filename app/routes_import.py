@@ -24,6 +24,7 @@ import re
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -44,6 +45,15 @@ import_bp = Blueprint("import_jobs", __name__, url_prefix="/import")
 
 IMPORT_SITE = "import"
 STATUS_IMPORTED = "imported"
+
+# Staging-record lifecycle. A record enters as a bare URL (``unprocessed``) that
+# an MCP client retrieves, enriches and imports; importing a matching file then
+# fills in the remaining fields and promotes it to ``staged`` (viewable and
+# committable). Records loaded straight from a file skip ``unprocessed`` and are
+# ``staged`` from the start. Existing records predate this field and are treated
+# as ``staged`` (the view filter only ever excludes ``unprocessed``).
+STATUS_UNPROCESSED = "unprocessed"
+STATUS_STAGED = "staged"
 
 # A row whose description is at least this similar (percent) to an active job is
 # treated as a likely duplicate/match rather than a new opportunity.
@@ -113,6 +123,15 @@ def _identifying_url(value: Any) -> str:
     if _is_search_url(value):
         return ""
     return _normalize_url(value)
+
+
+def _is_valid_url(value: Any) -> bool:
+    """Return True if the value is a well-formed http(s) URL with a host."""
+    text = str(value or "").strip()
+    if not text:
+        return False
+    parsed = urlparse(text)
+    return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
 def _description_vector(text: Any) -> Tuple[Counter, float]:
@@ -332,53 +351,171 @@ def _staging_identity(job: Dict[str, Any]) -> str:
     )
 
 
+def _staged_fields(job: Dict[str, Any], source: Optional[str], now: datetime) -> Dict[str, Any]:
+    """The stored representation of a fully-described staged opportunity."""
+    return {
+        "title": job.get("title"),
+        "company": job.get("company"),
+        "location": job.get("location"),
+        "url": job.get("url"),
+        "salary": job.get("salary"),
+        "keywords": job.get("keywords", []),
+        "description_text": job.get("description_text"),
+        "source_file": source,
+        "status": STATUS_STAGED,
+        "staged_at": now,
+    }
+
+
 def stage_jobs(db, jobs: List[Dict[str, Any]], source: Optional[str] = None) -> Dict[str, int]:
     """Append parsed opportunities to the staging area, skipping ones already staged.
 
     This is the reusable entry point for loading files into the import staging
-    area. It is called by the HTTP upload route and is intended to be reused by
-    a future MCP server that loads one or more files. Returns ``{"added", "skipped"}``.
+    area. It is called by the HTTP upload route and is reused by the MCP server
+    that loads one or more files. Returns ``{"added", "skipped"}``.
+
+    A job whose URL matches a pending ``unprocessed`` URL record (pre-staged via
+    :func:`stage_urls`) fills in that same record's fields and promotes it to
+    ``staged`` instead of inserting a new row — that is how a retrieved URL turns
+    into a viewable opportunity. Such promotions count towards ``added``.
     """
-    existing = {
-        _staging_identity(doc)
-        for doc in db.import_staging.find({})
-    }
+    existing: set = set()
+    pending_by_url: Dict[str, Dict[str, Any]] = {}
+    for doc in db.import_staging.find({}):
+        if doc.get("status") == STATUS_UNPROCESSED:
+            url_key = _identifying_url(doc.get("url"))
+            if url_key:
+                pending_by_url[url_key] = doc
+        else:
+            existing.add(_staging_identity(doc))
+
     now = _utcnow()
     to_insert: List[Dict[str, Any]] = []
+    added = 0
     skipped = 0
 
     for job in jobs:
         identity = _staging_identity(job)
-        if not identity or identity in existing:
+        if not identity:
+            skipped += 1
+            continue
+
+        url_key = _identifying_url(job.get("url"))
+        pending = pending_by_url.pop(url_key, None) if url_key else None
+        if pending is not None:
+            # Promote the pre-staged URL in place: fill in its fields and mark it
+            # viewable. The now-complete record dedupes future uploads.
+            db.import_staging.update_one(
+                {"_id": pending["_id"]},
+                {"$set": _staged_fields(job, source, now)},
+            )
+            existing.add(identity)
+            added += 1
+            continue
+
+        if identity in existing:
             skipped += 1
             continue
         existing.add(identity)
+        to_insert.append(_staged_fields(job, source, now))
+
+    if to_insert:
+        db.import_staging.insert_many(to_insert)
+    added += len(to_insert)
+    return {"added": added, "skipped": skipped}
+
+
+def parse_urls(raw_text: str) -> List[str]:
+    """Split pasted text into individual URL tokens (whitespace-separated)."""
+    return [token for token in str(raw_text or "").split() if token]
+
+
+def stage_urls(db, urls: List[str], source: Optional[str] = None) -> Dict[str, int]:
+    """Pre-stage bare job URLs as ``unprocessed`` records for later enrichment.
+
+    Each URL is checked against active (non-archived) imported jobs and against
+    every staging record (pending or staged); only genuinely new, identifying
+    URLs are inserted. An MCP client retrieves these via ``find_pending_urls``,
+    enriches them and imports a file, which promotes them to ``staged``.
+
+    Returns ``{"added", "skipped", "invalid"}`` — skipped: already known;
+    invalid: malformed or a non-identifying search/results URL.
+    """
+    job_urls = {
+        key
+        for doc in db.jobs.find({"archived": {"$ne": True}})
+        if (key := _identifying_url(doc.get("url")))
+    }
+    staged_urls = {
+        key
+        for doc in db.import_staging.find({})
+        if (key := _identifying_url(doc.get("url")))
+    }
+    now = _utcnow()
+    to_insert: List[Dict[str, Any]] = []
+    seen: set = set()
+    added = skipped = invalid = 0
+
+    for raw in urls:
+        text = str(raw or "").strip()
+        if not _is_valid_url(text):
+            invalid += 1
+            continue
+        key = _identifying_url(text)
+        if not key:
+            # A search/results-page URL is not a single posting to process.
+            invalid += 1
+            continue
+        if key in job_urls or key in staged_urls or key in seen:
+            skipped += 1
+            continue
+        seen.add(key)
         to_insert.append(
             {
-                "title": job.get("title"),
-                "company": job.get("company"),
-                "location": job.get("location"),
-                "url": job.get("url"),
-                "salary": job.get("salary"),
-                "keywords": job.get("keywords", []),
-                "description_text": job.get("description_text"),
+                "url": text,
+                "status": STATUS_UNPROCESSED,
                 "source_file": source,
                 "staged_at": now,
             }
         )
+        added += 1
 
     if to_insert:
         db.import_staging.insert_many(to_insert)
-    return {"added": len(to_insert), "skipped": skipped}
+    return {"added": added, "skipped": skipped, "invalid": invalid}
 
 
 def _staged_rows(db) -> List[Dict[str, Any]]:
-    """Load staged opportunities and annotate each with its current match."""
-    staged = list(db.import_staging.find({}).sort([("staged_at", 1)]))
+    """Load viewable staged opportunities and annotate each with its match.
+
+    Pending ``unprocessed`` URL records are pre-staging only: they carry no
+    fields yet and are not offered for import, so they are excluded here.
+    """
+    staged = list(
+        db.import_staging.find({"status": {"$ne": STATUS_UNPROCESSED}}).sort(
+            [("staged_at", 1)]
+        )
+    )
     rows = match_jobs(staged, db)
     for row in rows:
         row["id"] = str(row["job"]["_id"])
     return rows
+
+
+def _pending_urls(db) -> List[Dict[str, Any]]:
+    """List the pre-staged ``unprocessed`` URLs awaiting enrichment."""
+    docs = db.import_staging.find({"status": STATUS_UNPROCESSED}).sort(
+        [("staged_at", 1)]
+    )
+    return [
+        {
+            "id": str(doc["_id"]),
+            "url": doc.get("url"),
+            "source": doc.get("source_file"),
+            "staged_at": doc.get("staged_at"),
+        }
+        for doc in docs
+    ]
 
 
 @import_bp.route("", methods=["GET"])
@@ -389,14 +526,18 @@ def import_form():
         return error
 
     rows = _staged_rows(db)
+    pending = _pending_urls(db)
     summary = {
         "total": len(rows),
         "new": sum(1 for r in rows if r["status"] == "new"),
         "matched": sum(1 for r in rows if r["status"] == "matched"),
         "duplicate": sum(1 for r in rows if r["status"] == "duplicate"),
+        "pending": len(pending),
         "threshold": SIMILARITY_THRESHOLD,
     }
-    return render_template("import.html", rows=rows, summary=summary)
+    return render_template(
+        "import.html", rows=rows, summary=summary, pending=pending
+    )
 
 
 @import_bp.route("/upload", methods=["POST"])
@@ -427,6 +568,38 @@ def upload():
         f"Loaded {result['added']} opportunities from {upload_file.filename}"
         f" ({result['skipped']} already staged)."
     )
+    return redirect(url_for("import_jobs.import_form"))
+
+
+@import_bp.route("/urls", methods=["POST"])
+def add_urls():
+    """Pre-stage pasted job URLs as ``unprocessed`` records for MCP processing."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    urls = parse_urls(request.form.get("urls", ""))
+    if not urls:
+        flash("Please paste at least one URL.")
+        return redirect(url_for("import_jobs.import_form"))
+
+    result = stage_urls(db, urls, source="manual")
+    flash(
+        f"Added {result['added']} URL(s) to process "
+        f"({result['skipped']} already known, {result['invalid']} invalid)."
+    )
+    return redirect(url_for("import_jobs.import_form"))
+
+
+@import_bp.route("/urls/clear", methods=["POST"])
+def clear_urls():
+    """Remove all pending (unprocessed) URLs from the staging area."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    result = db.import_staging.delete_many({"status": STATUS_UNPROCESSED})
+    flash(f"Cleared {result.deleted_count} pending URL(s).")
     return redirect(url_for("import_jobs.import_form"))
 
 
@@ -485,17 +658,31 @@ def commit():
         # Imported records leave the staging area.
         db.import_staging.delete_one({"_id": oid})
 
-    flash(f"Imported {created} new opportunities ({skipped} already existed).")
+    processed = created + skipped
+    if processed == 0:
+        flash("No opportunities were selected to import.")
+    else:
+        # How many viewable opportunities are still staged (pending URLs excluded).
+        remaining = db.import_staging.count_documents(
+            {"status": {"$ne": STATUS_UNPROCESSED}}
+        )
+        flash(
+            f"Staging processed: imported {created} new "
+            f"opportunit{'y' if created == 1 else 'ies'} "
+            f"({skipped} already existed). {remaining} still staged."
+        )
     return redirect(url_for("import_jobs.import_form"))
 
 
 @import_bp.route("/clear", methods=["POST"])
 def clear():
-    """Remove all opportunities from the staging area."""
+    """Remove viewable staged opportunities, leaving pending URLs untouched."""
     db, error = _get_db_or_error()
     if error:
         return error
 
-    result = db.import_staging.delete_many({})
+    # Pending (unprocessed) URLs are cleared separately via ``clear_urls`` so a
+    # staging cleanup doesn't discard URLs an MCP client hasn't processed yet.
+    result = db.import_staging.delete_many({"status": {"$ne": STATUS_UNPROCESSED}})
     flash(f"Cleared {result.deleted_count} staged opportunities.")
     return redirect(url_for("import_jobs.import_form"))

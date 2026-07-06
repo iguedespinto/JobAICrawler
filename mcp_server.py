@@ -5,6 +5,8 @@ Exposes tools that a Claude Code routine (or the desktop app) can call to:
 - Load one or more JSON files of job opportunities into the import staging
   area (``import_file`` / ``import_files`` / ``staging_status``), reusing the
   application's own ``parse_jobs`` / ``stage_jobs`` logic.
+- Retrieve job URLs a user queued in the web UI (``find_pending_urls``) so the
+  client can validate them and prepare a file to import.
 - Retrieve job offers from the database (``find_jobs``) and change their
   status (``update_job_status`` — archive/unarchive, set saved/applied).
 
@@ -24,7 +26,7 @@ from bson.errors import InvalidId
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
-from app.routes_import import parse_jobs, stage_jobs
+from app.routes_import import STATUS_UNPROCESSED, parse_jobs, stage_jobs
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -125,6 +127,87 @@ def staging_status() -> Dict[str, Any]:
     try:
         db = _get_db()
         return {"staged_total": db.import_staging.count_documents({})}
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+# ── Retrieve pending URLs to process ─────────────────────────────────
+
+# Bare URLs queued in the web UI are stored in the staging area as
+# ``unprocessed`` records (see app/routes_import.py). This server hands them to
+# a client that validates each URL, confirms the job is still open and writes a
+# JSON file with the full fields. Importing that file (import_file) fills in the
+# matching record and promotes it out of ``unprocessed`` — so a processed URL
+# naturally stops appearing here; no explicit "mark done" call is required.
+
+
+def _pending_url_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Serialise a pending URL staging record into a plain summary."""
+    staged_at = doc.get("staged_at")
+    return {
+        "id": str(doc.get("_id")),
+        "url": doc.get("url"),
+        "source": doc.get("source_file"),
+        "staged_at": staged_at.isoformat() if staged_at is not None else None,
+    }
+
+
+def count_pending_urls_in_db(db) -> int:
+    """Count URLs queued for processing (for pagination)."""
+    return db.import_staging.count_documents({"status": STATUS_UNPROCESSED})
+
+
+def find_pending_urls_in_db(
+    db, page: int = 1, limit: int = 50
+) -> List[Dict[str, Any]]:
+    """Retrieve one page of pending (unprocessed) URLs, oldest first."""
+    limit = max(1, min(int(limit), 200))
+    page = max(1, int(page))
+    skip = (page - 1) * limit
+    # Tie-break on _id so paging is a stable total order even when several URLs
+    # share a staged_at timestamp (they are inserted in a single batch).
+    cursor = (
+        db.import_staging.find({"status": STATUS_UNPROCESSED})
+        .sort([("staged_at", 1), ("_id", 1)])
+        .skip(skip)
+        .limit(limit)
+    )
+    return [_pending_url_summary(doc) for doc in cursor]
+
+
+@mcp.tool()
+def find_pending_urls(page: int = 1, limit: int = 50) -> Dict[str, Any]:
+    """Retrieve a page of job URLs queued in the web UI for processing.
+
+    These are bare URLs a user pre-staged: validate each one, confirm the job is
+    still open, and write a JSON import file with the full fields. Importing that
+    file (import_file) promotes each matching URL into a viewable opportunity and
+    removes it from this queue.
+
+    Args:
+        page: 1-based page number (use with total_pages / has_more to iterate).
+        limit: Page size (1-200), oldest first.
+
+    Returns the page of URLs plus pagination metadata (total, page, limit,
+    total_pages, has_more). Each item has id, url, source and staged_at.
+    """
+    try:
+        db = _get_db()
+        total = count_pending_urls_in_db(db)
+        urls = find_pending_urls_in_db(db, page=page, limit=limit)
+
+        limit_c = max(1, min(int(limit), 200))
+        page_c = max(1, int(page))
+        total_pages = (total + limit_c - 1) // limit_c if total else 0
+        return {
+            "urls": urls,
+            "count": len(urls),
+            "total": total,
+            "page": page_c,
+            "limit": limit_c,
+            "total_pages": total_pages,
+            "has_more": page_c < total_pages,
+        }
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
 

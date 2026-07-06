@@ -24,6 +24,26 @@ JSON import flow.
    pre-selected; matches are not.
 4. Adjust the selection and click **Import selected** to create them.
 
+### Queuing URLs for processing
+
+Bare job URLs can be queued for enrichment before they become importable
+opportunities:
+
+1. On `/import`, paste one URL per line into **Pending URLs** and click
+   **Queue URLs**. Each URL is checked against active imported jobs and all
+   staged records; only new, single-posting URLs are kept (search/results pages
+   are rejected). They are stored as `unprocessed` records, hidden from the
+   staging table below.
+2. An MCP client retrieves them with `find_pending_urls`, validates each URL,
+   confirms the job is still open, and writes a JSON import file with the full
+   fields.
+3. Importing that file (via the upload form or the MCP `import_file` tool) fills
+   in the matching queued URL in place and promotes it to a viewable, importable
+   opportunity — so it no longer appears in the pending queue.
+
+Use **Clear pending URLs** to drop URLs that never produced a record (e.g. a job
+that has since closed).
+
 ### Environment variables
 
 Required:

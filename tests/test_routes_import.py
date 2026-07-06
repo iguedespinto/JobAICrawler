@@ -243,6 +243,38 @@ def test_commit_imports_selected_and_removes_from_staging(app_client, monkeypatc
     assert fake_db.import_staging.find_one({"title": "Role A"}) is None
     assert fake_db.import_staging.find_one({"title": "Role B"}) is not None
 
+    # Following the redirect surfaces a confirmation with counts and remainder.
+    body = app_client.post(
+        "/import/commit",
+        data={"select": str(role_a["_id"])},  # already imported -> 0 processed
+        follow_redirects=True,
+    ).data.decode("utf-8")
+    assert "No opportunities were selected to import." in body
+
+
+def test_commit_flash_reports_processed_and_remaining(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [
+            {"title": "Role A", "company": "Acme", "url": "https://example.com/a"},
+            {"title": "Role B", "company": "Beta", "url": "https://example.com/b"},
+        ],
+    )
+    role_a = fake_db.import_staging.find_one({"title": "Role A"})
+
+    body = app_client.post(
+        "/import/commit",
+        data={"select": str(role_a["_id"])},
+        follow_redirects=True,
+    ).data.decode("utf-8")
+
+    # Confirms processing, the imported count, and how many remain staged.
+    assert "Staging processed: imported 1 new opportunity" in body
+    assert "1 still staged." in body
+
 
 def test_clear_empties_staging(app_client, monkeypatch):
     fake_db = FakeDB(jobs=[], profiles=[])
@@ -257,3 +289,106 @@ def test_clear_empties_staging(app_client, monkeypatch):
     response = app_client.post("/import/clear")
     assert response.status_code == 302
     assert fake_db.import_staging.count_documents({}) == 0
+
+
+# ── Pre-staging bare URLs (unprocessed records) ──────────────────────
+
+_UNPROCESSED = routes_import.STATUS_UNPROCESSED
+
+
+def _pending_count(db):
+    return db.import_staging.count_documents({"status": _UNPROCESSED})
+
+
+def test_stage_urls_adds_dedupes_and_validates():
+    fake_db = FakeDB(
+        jobs=[{"title": "Known", "company": "Acme", "url": "https://example.com/known"}],
+        profiles=[],
+    )
+    fake_db.import_staging.insert_one(
+        {"url": "https://example.com/staged", "status": _UNPROCESSED}
+    )
+
+    result = routes_import.stage_urls(
+        fake_db,
+        [
+            "https://example.com/new-1",       # added
+            "https://example.com/new-1",       # duplicate within the batch
+            "https://example.com/known",       # already an imported job
+            "https://example.com/staged/",     # already staged (trailing slash)
+            "not-a-url",                        # invalid
+            "https://ie.indeed.com/q-dev-jobs.html",  # non-identifying search URL
+        ],
+    )
+
+    assert result == {"added": 1, "skipped": 3, "invalid": 2}
+    assert _pending_count(fake_db) == 2  # the pre-existing one plus the new one
+
+
+def test_stage_urls_skips_url_of_archived_job_is_allowed():
+    # Answer to design Q2: only active jobs block a URL; archived ones do not.
+    fake_db = FakeDB(
+        jobs=[{"title": "Old", "company": "Acme",
+               "url": "https://example.com/old", "archived": True}],
+        profiles=[],
+    )
+
+    result = routes_import.stage_urls(fake_db, ["https://example.com/old"])
+
+    assert result == {"added": 1, "skipped": 0, "invalid": 0}
+    assert _pending_count(fake_db) == 1
+
+
+def test_pending_urls_hidden_from_staging_view():
+    fake_db = FakeDB(jobs=[], profiles=[])
+    routes_import.stage_urls(fake_db, ["https://example.com/pending"])
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Full", "company": "Acme", "url": "https://example.com/full"}],
+    )
+
+    rows = routes_import._staged_rows(fake_db)
+    pending = routes_import._pending_urls(fake_db)
+
+    assert [r["job"]["title"] for r in rows] == ["Full"]
+    assert [p["url"] for p in pending] == ["https://example.com/pending"]
+
+
+def test_import_promotes_matching_pending_url_in_place():
+    fake_db = FakeDB(jobs=[], profiles=[])
+    routes_import.stage_urls(fake_db, ["https://example.com/jobs/1"])
+    assert _pending_count(fake_db) == 1
+
+    result = routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Backend Engineer", "company": "Acme",
+          "url": "https://example.com/jobs/1", "description_text": "Build APIs"}],
+    )
+
+    # Promotion, not a new row: still a single staging record, now viewable.
+    assert result == {"added": 1, "skipped": 0}
+    assert fake_db.import_staging.count_documents({}) == 1
+    assert _pending_count(fake_db) == 0
+    doc = fake_db.import_staging.find_one({"url": "https://example.com/jobs/1"})
+    assert doc["title"] == "Backend Engineer"
+    assert doc["status"] == routes_import.STATUS_STAGED
+
+
+def test_add_urls_route_and_clear(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    response = app_client.post(
+        "/import/urls",
+        data={"urls": "https://example.com/a\nhttps://example.com/b"},
+    )
+    assert response.status_code == 302
+    assert _pending_count(fake_db) == 2
+
+    # Clearing the staging area leaves pending URLs untouched...
+    app_client.post("/import/clear")
+    assert _pending_count(fake_db) == 2
+
+    # ...but clearing pending URLs empties them.
+    app_client.post("/import/urls/clear")
+    assert _pending_count(fake_db) == 0

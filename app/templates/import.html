@@ -56,6 +56,46 @@
       <button type="submit">Load file</button>
     </form>
 
+    <h2>Pending URLs</h2>
+    <p class="hint">Paste job posting URLs (one per line) to queue them for
+      processing. They are checked against imported jobs and staged records, then
+      held here — hidden from the staging table below — until an MCP client
+      retrieves, validates and imports them, at which point they become viewable
+      opportunities. Search/results-page URLs are rejected.</p>
+    <form method="post" action="{{ url_for('import_jobs.add_urls') }}">
+      <textarea name="urls" rows="4" style="width: 100%; box-sizing: border-box;"
+                placeholder="https://example.com/jobs/123&#10;https://example.com/jobs/456"></textarea>
+      <div class="actions">
+        <button type="submit">Queue URLs</button>
+      </div>
+    </form>
+
+    {% if pending %}
+      <p class="hint"><strong>{{ summary.pending }}</strong> URL(s) awaiting
+        processing.</p>
+      <form id="clear-urls-form" method="post"
+            action="{{ url_for('import_jobs.clear_urls') }}"
+            onsubmit="return confirm('Clear all {{ summary.pending }} pending URL(s)?');"></form>
+      <table>
+        <thead>
+          <tr><th>URL</th><th>Source</th></tr>
+        </thead>
+        <tbody>
+          {% for item in pending %}
+            <tr>
+              <td><a href="{{ item.url }}" target="_blank" rel="noopener">{{ item.url }}</a></td>
+              <td>{{ item.source or 'n/a' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="actions">
+        <button type="submit" form="clear-urls-form">Clear pending URLs</button>
+      </div>
+    {% else %}
+      <p class="hint">No URLs are queued for processing.</p>
+    {% endif %}
+
     {% if rows %}
       <div class="actions">
         <button type="submit" form="commit-form">Import selected</button>

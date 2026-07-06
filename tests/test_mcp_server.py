@@ -125,3 +125,44 @@ def test_find_jobs_pagination_covers_all_without_overlap():
     assert [len(p1), len(p2), len(p3), len(p4)] == [2, 2, 1, 0]
     ids = {j["id"] for j in p1 + p2 + p3}
     assert len(ids) == 5  # every record reachable, no page overlap
+
+
+# ── Pending URLs ─────────────────────────────────────────────────────
+
+from app import routes_import  # noqa: E402
+
+
+def test_find_pending_urls_returns_only_unprocessed():
+    db = FakeDB(jobs=[], profiles=[])
+    routes_import.stage_urls(
+        db, ["https://example.com/a", "https://example.com/b"], source="manual"
+    )
+    # A fully-staged opportunity must not surface as a pending URL.
+    routes_import.stage_jobs(
+        db, [{"title": "Full", "company": "Acme", "url": "https://example.com/c"}]
+    )
+
+    assert mcp_server.count_pending_urls_in_db(db) == 2
+
+    urls = mcp_server.find_pending_urls_in_db(db, page=1, limit=10)
+    assert {u["url"] for u in urls} == {
+        "https://example.com/a",
+        "https://example.com/b",
+    }
+    # Each item is a plain, serialisable summary with an id and ISO timestamp.
+    assert all(isinstance(u["id"], str) for u in urls)
+    assert all(isinstance(u["staged_at"], str) for u in urls)
+
+
+def test_find_pending_urls_pagination():
+    db = FakeDB(jobs=[], profiles=[])
+    routes_import.stage_urls(
+        db, [f"https://example.com/{i}" for i in range(5)], source="manual"
+    )
+
+    p1 = mcp_server.find_pending_urls_in_db(db, page=1, limit=2)
+    p2 = mcp_server.find_pending_urls_in_db(db, page=2, limit=2)
+    p3 = mcp_server.find_pending_urls_in_db(db, page=3, limit=2)
+
+    assert [len(p1), len(p2), len(p3)] == [2, 2, 1]
+    assert len({u["id"] for u in p1 + p2 + p3}) == 5
