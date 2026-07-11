@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 import json
 
+from bson import ObjectId
+
 from app import routes_import
 from tests.conftest import FakeDB
 
@@ -392,3 +394,168 @@ def test_add_urls_route_and_clear(app_client, monkeypatch):
     # ...but clearing pending URLs empties them.
     app_client.post("/import/urls/clear")
     assert _pending_count(fake_db) == 0
+
+
+# ── Open / closed opportunity state ──────────────────────────────────
+
+
+def test_parse_jobs_state_defaults_open_and_reads_closed():
+    raw = json.dumps(
+        [
+            {"name": "A", "url": "https://example.com/a"},
+            {"name": "B", "url": "https://example.com/b", "state": "closed"},
+            {"name": "C", "url": "https://example.com/c", "status": "expired"},
+            {"name": "D", "url": "https://example.com/d", "state": "OPEN"},
+        ]
+    )
+
+    jobs = routes_import.parse_jobs(raw)
+
+    assert [j["state"] for j in jobs] == ["open", "closed", "closed", "open"]
+
+
+def test_preselect_reflects_state_and_match():
+    fake_db = FakeDB(
+        jobs=[{"title": "Existing", "company": "Acme",
+               "url": "https://example.com/e"}],
+        profiles=[],
+    )
+    jobs = [
+        # open + matched -> not selected
+        {"title": "Existing", "company": "Acme", "url": "https://example.com/e"},
+        # open + new -> selected
+        {"title": "Fresh Open", "company": "Beta", "url": "https://example.com/f"},
+        # closed + matched -> selected (will close the match)
+        {"title": "Existing", "company": "Acme",
+         "url": "https://example.com/e", "state": "closed"},
+        # closed + new -> selected (import as closed record)
+        {"title": "Fresh Closed", "company": "Gamma",
+         "url": "https://example.com/g", "state": "closed"},
+    ]
+
+    rows = routes_import.match_jobs(jobs, fake_db)
+
+    assert [r["state"] for r in rows] == ["open", "open", "closed", "closed"]
+    assert [r["preselect"] for r in rows] == [False, True, True, True]
+
+
+def test_commit_open_new_sets_state_open(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Role A", "company": "Acme", "url": "https://example.com/a"}],
+    )
+    staged = fake_db.import_staging.find_one({"title": "Role A"})
+
+    app_client.post("/import/commit", data={"select": str(staged["_id"])})
+
+    job = fake_db.jobs.find_one({"title": "Role A"})
+    assert job is not None
+    assert job["state"] == "open"
+
+
+def test_commit_closed_match_closes_existing_without_new_record(app_client, monkeypatch):
+    existing_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[{"_id": existing_id, "title": "Backend Engineer", "company": "Acme",
+               "url": "https://example.com/jobs/1", "state": "open",
+               "site": "import"}],
+        profiles=[],
+    )
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Backend Engineer", "company": "Acme",
+          "url": "https://example.com/jobs/1", "state": "closed"}],
+    )
+    staged = fake_db.import_staging.find_one({"status": routes_import.STATUS_STAGED})
+
+    body = app_client.post(
+        "/import/commit",
+        data={"select": str(staged["_id"])},
+        follow_redirects=True,
+    ).data.decode("utf-8")
+
+    # The existing job is closed in place; no second record is created.
+    assert fake_db.jobs.count_documents({}) == 1
+    assert fake_db.jobs.find_one({"_id": existing_id})["state"] == "closed"
+    assert fake_db.import_staging.find_one({"_id": staged["_id"]}) is None
+    assert "closed 1 existing" in body
+
+
+def test_matching_spans_open_and_closed_existing_jobs():
+    # Closed jobs are not archived, so they stay match candidates: an incoming
+    # opportunity (open or closed) matches existing open AND closed jobs.
+    fake_db = FakeDB(
+        jobs=[
+            {"title": "Open Role", "company": "Acme",
+             "url": "https://example.com/open", "state": "open"},
+            {"title": "Closed Role", "company": "Beta",
+             "url": "https://example.com/closed", "state": "closed"},
+        ],
+        profiles=[],
+    )
+    incoming = [
+        # closed import vs an existing OPEN job
+        {"title": "Open Role", "company": "Acme",
+         "url": "https://example.com/open", "state": "closed"},
+        # closed import vs an existing CLOSED job
+        {"title": "Closed Role", "company": "Beta",
+         "url": "https://example.com/closed", "state": "closed"},
+        # open import vs an existing CLOSED job
+        {"title": "Closed Role", "company": "Beta",
+         "url": "https://example.com/closed"},
+    ]
+
+    rows = routes_import.match_jobs(incoming, fake_db)
+    assert [r["status"] for r in rows] == ["matched", "matched", "matched"]
+
+    # And the close-target lookup finds both open and closed matches.
+    assert routes_import._find_existing_job(fake_db, incoming[0]) is not None
+    assert routes_import._find_existing_job(fake_db, incoming[1]) is not None
+
+
+def test_commit_closed_match_closes_already_closed_job(app_client, monkeypatch):
+    existing_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[{"_id": existing_id, "title": "Closed Role", "company": "Beta",
+               "url": "https://example.com/closed", "state": "closed",
+               "site": "import"}],
+        profiles=[],
+    )
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Closed Role", "company": "Beta",
+          "url": "https://example.com/closed", "state": "closed"}],
+    )
+    staged = fake_db.import_staging.find_one({"status": routes_import.STATUS_STAGED})
+
+    app_client.post("/import/commit", data={"select": str(staged["_id"])})
+
+    # Matched the already-closed job (idempotent); no duplicate record created.
+    assert fake_db.jobs.count_documents({}) == 1
+    assert fake_db.jobs.find_one({"_id": existing_id})["state"] == "closed"
+
+
+def test_commit_closed_no_match_imports_closed_record(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Gone Role", "company": "Acme",
+          "url": "https://example.com/gone", "state": "closed"}],
+    )
+    staged = fake_db.import_staging.find_one({"title": "Gone Role"})
+
+    app_client.post("/import/commit", data={"select": str(staged["_id"])})
+
+    job = fake_db.jobs.find_one({"title": "Gone Role"})
+    assert job is not None
+    assert job["state"] == "closed"
+    assert job["status"] == routes_import.STATUS_IMPORTED

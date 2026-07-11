@@ -55,6 +55,17 @@ STATUS_IMPORTED = "imported"
 STATUS_UNPROCESSED = "unprocessed"
 STATUS_STAGED = "staged"
 
+# An opportunity's posting state, independent of ``archived`` (a user reject).
+# Missing/blank/unknown counts as open. Closed opportunities are still stored
+# (matched ones close the existing job; unmatched ones import as a closed record
+# kept for statistical/keyword analysis).
+STATE_OPEN = "open"
+STATE_CLOSED = "closed"
+_CLOSED_STATES = {
+    "closed", "close", "expired", "filled", "inactive", "unavailable",
+    "gone", "removed", "not open", "no longer available",
+}
+
 # A row whose description is at least this similar (percent) to an active job is
 # treated as a likely duplicate/match rather than a new opportunity.
 SIMILARITY_THRESHOLD = 85
@@ -180,6 +191,11 @@ def _as_keywords(value: Any) -> List[str]:
     return [part.strip() for part in str(value).split(",") if part.strip()]
 
 
+def _normalize_state(value: Any) -> str:
+    """Coerce an incoming state/status value to ``closed`` or (default) ``open``."""
+    return STATE_CLOSED if _normalize_text(value) in _CLOSED_STATES else STATE_OPEN
+
+
 def parse_jobs(raw_text: str) -> List[Dict[str, Any]]:
     """Parse uploaded JSON text into normalized opportunity dictionaries.
 
@@ -210,6 +226,7 @@ def parse_jobs(raw_text: str) -> List[Dict[str, Any]]:
                 "salary": (entry.get("salary") or "").strip(),
                 "keywords": _as_keywords(entry.get("keywords")),
                 "description_text": (entry.get("description") or "").strip(),
+                "state": _normalize_state(entry.get("state") or entry.get("status")),
             }
         )
     return jobs
@@ -238,7 +255,12 @@ def _make_candidate(
 
 
 def _active_candidates(db) -> List[Dict[str, Any]]:
-    """Comparison candidates from active (non-archived) jobs in the database."""
+    """Comparison candidates from non-archived jobs in the database.
+
+    Both open and closed jobs are candidates (state is not filtered) — an
+    incoming opportunity, whether open or closed, is matched against every
+    non-archived job. Only ``archived`` (a user reject) removes a job from here.
+    """
     return [
         _make_candidate(
             doc.get("title"), doc.get("company"), doc.get("url"),
@@ -330,14 +352,21 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
             seen_urls.setdefault(url_key, candidate)
         seen_tc.setdefault(tc_key, candidate)
 
+        state = job.get("state") or STATE_OPEN
         rows.append(
             {
                 "job": job,
                 "status": status,
                 "reason": reason,
+                "state": state,
                 "similarity": similarity,
                 "match_label": match["label"] if match else None,
                 "match_url": match["raw_url"] if match else None,
+                # Commit will import an open row only when it is new; a closed row
+                # is always actionable (close a definite match, else import as a
+                # closed record). Duplicates within the upload are never selected.
+                "preselect": status == "new"
+                or (state == STATE_CLOSED and status != "duplicate"),
             }
         )
     return rows
@@ -361,6 +390,7 @@ def _staged_fields(job: Dict[str, Any], source: Optional[str], now: datetime) ->
         "salary": job.get("salary"),
         "keywords": job.get("keywords", []),
         "description_text": job.get("description_text"),
+        "state": job.get("state") or STATE_OPEN,
         "source_file": source,
         "status": STATUS_STAGED,
         "staged_at": now,
@@ -532,6 +562,7 @@ def import_form():
         "new": sum(1 for r in rows if r["status"] == "new"),
         "matched": sum(1 for r in rows if r["status"] == "matched"),
         "duplicate": sum(1 for r in rows if r["status"] == "duplicate"),
+        "closed": sum(1 for r in rows if r["state"] == STATE_CLOSED),
         "pending": len(pending),
         "threshold": SIMILARITY_THRESHOLD,
     }
@@ -603,15 +634,42 @@ def clear_urls():
     return redirect(url_for("import_jobs.import_form"))
 
 
+def _find_existing_job(db, job: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The non-archived job this opportunity matches, or None.
+
+    Candidates span both open and closed jobs (state is not filtered), so a
+    closed import can close a job that is currently open or already closed.
+    Precedence mirrors :func:`match_jobs`: a single-posting URL first, then
+    title + company. Fuzzy description similarity is deliberately excluded — it
+    is too soft a signal to auto-close a different posting on.
+    """
+    url_key = _identifying_url(job.get("url"))
+    tc_key = _title_company_key(job.get("title"), job.get("company"))
+    url_match: Optional[Dict[str, Any]] = None
+    tc_match: Optional[Dict[str, Any]] = None
+    for doc in db.jobs.find({"archived": {"$ne": True}}):
+        if url_key and url_match is None and _identifying_url(doc.get("url")) == url_key:
+            url_match = doc
+        if tc_match is None and _title_company_key(doc.get("title"), doc.get("company")) == tc_key:
+            tc_match = doc
+    return url_match or tc_match
+
+
 @import_bp.route("/commit", methods=["POST"])
 def commit():
-    """Create the selected staged opportunities, removing them from staging."""
+    """Import selected staged opportunities, honouring their open/closed state.
+
+    - Open (default): create the job if new; a match is a no-op.
+    - Closed with a definite match: update that job to ``closed`` (status update).
+    - Closed with no match: create a new ``closed`` job kept for analysis.
+    """
     db, error = _get_db_or_error()
     if error:
         return error
 
     now = _utcnow()
     created = 0
+    closed = 0
     skipped = 0
 
     for raw_id in request.form.getlist("select"):
@@ -623,6 +681,23 @@ def commit():
         if job is None:
             continue
 
+        state = job.get("state") or STATE_OPEN
+
+        # A closed opportunity that matches an existing job just closes it — no
+        # new record is created.
+        if state == STATE_CLOSED:
+            existing = _find_existing_job(db, job)
+            if existing is not None:
+                db.jobs.update_one(
+                    {"_id": existing["_id"]},
+                    {"$set": {"state": STATE_CLOSED, "updated_at": now}},
+                )
+                closed += 1
+                db.import_staging.delete_one({"_id": oid})
+                continue
+
+        # Otherwise create (or refresh) the opportunity. Closed-with-no-match
+        # lands here too, importing a closed record for statistical analysis.
         # Use the URL as the dedup key only when it identifies a single posting.
         # Search/results-page URLs are shared, so fall back to title + company.
         external_id_source = (
@@ -643,6 +718,7 @@ def commit():
                     "salary": job.get("salary"),
                     "keywords": job.get("keywords", []),
                     "description_text": job.get("description_text"),
+                    "state": state,
                     "site": IMPORT_SITE,
                     "external_id": external_id,
                     "updated_at": now,
@@ -658,7 +734,7 @@ def commit():
         # Imported records leave the staging area.
         db.import_staging.delete_one({"_id": oid})
 
-    processed = created + skipped
+    processed = created + closed + skipped
     if processed == 0:
         flash("No opportunities were selected to import.")
     else:
@@ -668,8 +744,9 @@ def commit():
         )
         flash(
             f"Staging processed: imported {created} new "
-            f"opportunit{'y' if created == 1 else 'ies'} "
-            f"({skipped} already existed). {remaining} still staged."
+            f"opportunit{'y' if created == 1 else 'ies'}, "
+            f"closed {closed} existing ({skipped} already existed). "
+            f"{remaining} still staged."
         )
     return redirect(url_for("import_jobs.import_form"))
 

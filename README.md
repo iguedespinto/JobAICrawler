@@ -18,11 +18,22 @@ JSON import flow.
 1. Open `/import`.
 2. Upload a JSON file. The file is an array of objects (a single object is also
    accepted) with these fields:
-   - `name` (job title), `company`, `url`, `salary`, `description`, `keywords`.
+   - `name` (job title), `company`, `url`, `salary`, `description`, `keywords`,
+     and an optional `state` of `open` (default) or `closed`.
 3. Review the preview. Each opportunity is matched against what is already in the
    database: first by URL, then by title + company. New opportunities are
    pre-selected; matches are not.
 4. Adjust the selection and click **Import selected** to create them.
+
+Opportunities can be imported whether **open** or **closed** (missing `state`
+counts as open):
+
+- **Open + new** → created as an open opportunity.
+- **Open + matched** → left as a match; not selected for import.
+- **Closed + matched** (by URL or title + company) → the existing job is updated
+  to `closed` (a status update); no new record is created.
+- **Closed + no match** → imported as a `closed` record, kept for
+  statistical/keyword analysis.
 
 ### Queuing URLs for processing
 
