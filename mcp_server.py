@@ -230,6 +230,7 @@ def _job_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
         "archived": bool(doc.get("archived")),
         "user_status": doc.get("user_status"),
         "status": doc.get("status"),
+        "state": doc.get("state") or "open",
     }
 
 

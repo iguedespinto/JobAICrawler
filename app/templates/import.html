@@ -21,6 +21,12 @@
       .badge.new { background: #2e7d32; color: #fff; }
       .badge.matched { background: #c62828; color: #fff; }
       .badge.duplicate { background: #b8860b; color: #fff; }
+      .badge.open { background: #00695c; color: #fff; }
+      .badge.closed { background: #37474f; color: #fff; }
+      .action { font-size: 0.8rem; margin-top: 0.2rem; }
+      .action.create { color: #2e7d32; }
+      .action.close { color: #c62828; }
+      .action.none { color: #999; }
       .reason { color: #666; font-size: 0.8rem; }
       .keywords { color: #555; font-size: 0.85rem; }
       .actions { margin: 1rem 0; }
@@ -112,9 +118,13 @@
     "url": "https://example.com/jobs/123",
     "salary": "€90,000 - €100,000/year",
     "description": "Full job description text...",
-    "keywords": ["Python", "Flask", "MongoDB"]
+    "keywords": ["Python", "Flask", "MongoDB"],
+    "state": "open"
   }
 ]</pre>
+    <p class="hint"><code>state</code> is optional (defaults to <code>open</code>).
+      A <code>closed</code> opportunity closes the matching job if one exists,
+      otherwise it is imported as a closed record for keyword/statistics.</p>
 
     {% if rows %}
       <h2>Staging area</h2>
@@ -123,9 +133,12 @@
         <span><strong>{{ summary.new }}</strong> new</span>
         <span><strong>{{ summary.matched }}</strong> match existing</span>
         <span><strong>{{ summary.duplicate }}</strong> duplicate</span>
+        <span><strong>{{ summary.closed }}</strong> closed</span>
       </div>
       <p class="hint">New opportunities are pre-selected; likely duplicates
-        (description similarity &ge; {{ summary.threshold }}%) are not.</p>
+        (description similarity &ge; {{ summary.threshold }}%) are not. Closed
+        opportunities are pre-selected too — importing one closes the matching
+        job, or records it as closed for analysis if there is no match.</p>
 
       <!-- Forms are empty; their controls/checkboxes reference them via form="...". -->
       <form id="commit-form" method="post" action="{{ url_for('import_jobs.commit') }}"></form>
@@ -137,6 +150,7 @@
           <tr>
             <th>Import</th>
             <th>Status</th>
+            <th>State</th>
             <th>Title</th>
             <th>Company</th>
             <th>Similarity</th>
@@ -148,7 +162,7 @@
             <tr class="{{ row.status }}">
               <td>
                 <input type="checkbox" name="select" value="{{ row.id }}" form="commit-form"
-                       {% if row.status == 'new' %}checked{% endif %} />
+                       {% if row.preselect %}checked{% endif %} />
               </td>
               <td>
                 <span class="badge {{ row.status }}">{{ row.status }}</span>
@@ -161,6 +175,18 @@
                     {% elif row.reason == 'similar_in_file' %}similar to another staged row
                     {% endif %}
                   </div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge {{ row.state }}">{{ row.state }}</span>
+                {% if row.state == 'closed' and row.reason in ['url', 'title_company'] %}
+                  <div class="action close">closes existing job</div>
+                {% elif row.state == 'closed' %}
+                  <div class="action create">creates closed record</div>
+                {% elif row.status == 'new' %}
+                  <div class="action create">creates opportunity</div>
+                {% else %}
+                  <div class="action none">matches existing</div>
                 {% endif %}
               </td>
               <td>
