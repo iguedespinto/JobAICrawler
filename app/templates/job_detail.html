@@ -8,12 +8,17 @@
       .meta { color: #666; font-size: 0.9rem; }
       .section { margin-top: 2rem; }
       .tag { display: inline-block; margin-right: 0.5rem; padding: 0.2rem 0.5rem; background: #f2f2f2; }
+      .badge { font-size: 0.8rem; padding: 0.1rem 0.45rem; border-radius: 3px; color: #fff; }
+      .badge.open { background: #00695c; }
+      .badge.closed { background: #37474f; }
     </style>
   </head>
   <body>
     <a href="{{ url_for('jobs.list_jobs') }}">← Back to list</a>
     <h1>{{ job.title }}</h1>
     <div class="meta">{{ job.company }} · {{ job.location }}</div>
+    {% set st = job.state or 'open' %}
+    <div class="meta">State: <span class="badge {{ st }}">{{ st }}</span></div>
     {% if job.url %}
       <div class="meta"><a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">Job link</a></div>
     {% else %}

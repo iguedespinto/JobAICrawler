@@ -21,7 +21,12 @@
       .badge.new { background: #2e7d32; color: #fff; }
       .badge.matched { background: #c62828; color: #fff; }
       .badge.duplicate { background: #b8860b; color: #fff; }
+      .badge.open { background: #00695c; color: #fff; }
       .badge.closed { background: #37474f; color: #fff; }
+      .action { font-size: 0.8rem; margin-top: 0.2rem; }
+      .action.create { color: #2e7d32; }
+      .action.close { color: #c62828; }
+      .action.none { color: #999; }
       .reason { color: #666; font-size: 0.8rem; }
       .keywords { color: #555; font-size: 0.85rem; }
       .actions { margin: 1rem 0; }
@@ -145,6 +150,7 @@
           <tr>
             <th>Import</th>
             <th>Status</th>
+            <th>State</th>
             <th>Title</th>
             <th>Company</th>
             <th>Similarity</th>
@@ -160,9 +166,6 @@
               </td>
               <td>
                 <span class="badge {{ row.status }}">{{ row.status }}</span>
-                {% if row.state == 'closed' %}
-                  <span class="badge closed">closed</span>
-                {% endif %}
                 {% if row.reason %}
                   <div class="reason">
                     {% if row.reason == 'url' %}same URL exists
@@ -173,11 +176,17 @@
                     {% endif %}
                   </div>
                 {% endif %}
-                {% if row.state == 'closed' and row.status != 'duplicate' %}
-                  <div class="reason">
-                    {% if row.reason in ['url', 'title_company'] %}will close the matching job
-                    {% else %}will import as a closed record (analysis){% endif %}
-                  </div>
+              </td>
+              <td>
+                <span class="badge {{ row.state }}">{{ row.state }}</span>
+                {% if row.state == 'closed' and row.reason in ['url', 'title_company'] %}
+                  <div class="action close">closes existing job</div>
+                {% elif row.state == 'closed' %}
+                  <div class="action create">creates closed record</div>
+                {% elif row.status == 'new' %}
+                  <div class="action create">creates opportunity</div>
+                {% else %}
+                  <div class="action none">matches existing</div>
                 {% endif %}
               </td>
               <td>
