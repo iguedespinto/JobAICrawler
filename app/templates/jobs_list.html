@@ -12,6 +12,9 @@
       @media (min-width: 1200px) { .jobs-grid { grid-template-columns: repeat(4, 1fr); } }
       .job { border: 1px solid #ddd; padding: 1rem; }
       .meta { color: #666; font-size: 0.9rem; }
+      .badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 3px; color: #fff; vertical-align: middle; }
+      .badge.open { background: #00695c; }
+      .badge.closed { background: #37474f; }
       .pagination { margin-top: 1rem; }
       .pagination a { margin-right: 0.75rem; }
     </style>
@@ -64,7 +67,10 @@
       <div class="jobs-grid">
       {% for job in jobs %}
         <div class="job">
-          <h3><a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a></h3>
+          <h3>
+            <a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a>
+            <span class="badge {{ job.state }}">{{ job.state }}</span>
+          </h3>
           <div class="meta">{{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}</div>
           <div class="meta">Added: {{ job.created_at or "n/a" }}</div>
           {% if job.salary %}

@@ -133,6 +133,7 @@ def list_jobs():
                 "keywords": job.get("keywords", []),
                 "status": job.get("status"),
                 "user_status": job.get("user_status"),
+                "state": job.get("state") or "open",
                 "archived": bool(job.get("archived")),
                 "created_at": _format_date(job.get("created_at")),
             }
