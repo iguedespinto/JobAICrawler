@@ -14,30 +14,36 @@ def _db():
             {"_id": ObjectId(), "title": "A", "keywords": ["Python", "Flask", "apex"]},
             {"_id": ObjectId(), "title": "B", "keywords": ["Python", "APEX", "apex"]},
             {"_id": ObjectId(), "title": "C", "keywords": ["python"]},
-            # Archived job must be ignored.
-            {"_id": ObjectId(), "title": "D", "keywords": ["Go"], "archived": True},
+            # Closed job — counted by default (kept for keyword analysis).
+            {"_id": ObjectId(), "title": "D", "keywords": ["Go"], "state": "closed"},
         ],
         profiles=[],
     )
 
 
-def test_aggregate_excludes_archived_by_default():
+def test_aggregate_counts_all_states_by_default():
     rows, total = routes_dashboard.aggregate_keywords(_db())
-    assert total == 3  # archived job excluded
+    assert total == 4  # open and closed both counted
+    assert {r["keyword"].lower(): r["count"] for r in rows}["go"] == 1
+
+
+def test_aggregate_open_only_excludes_closed():
+    rows, total = routes_dashboard.aggregate_keywords(_db(), state="open")
+    assert total == 3  # closed job excluded
     assert "go" not in {r["keyword"].lower() for r in rows}
 
 
-def test_aggregate_includes_archived_when_requested():
-    rows, total = routes_dashboard.aggregate_keywords(_db(), include_archived=True)
-    assert total == 4  # archived job now counted
-    by_keyword = {r["keyword"].lower(): r for r in rows}
-    assert by_keyword["go"]["count"] == 1
+def test_aggregate_closed_only():
+    rows, total = routes_dashboard.aggregate_keywords(_db(), state="closed")
+    assert total == 1
+    assert {r["keyword"].lower() for r in rows} == {"go"}
 
 
 def test_aggregate_keywords_counts_percent_and_sort():
-    rows, total = routes_dashboard.aggregate_keywords(_db())
+    # Scope to open jobs so the three-opportunity percentages are exact.
+    rows, total = routes_dashboard.aggregate_keywords(_db(), state="open")
 
-    assert total == 3  # archived job excluded
+    assert total == 3  # closed job excluded
 
     by_keyword = {r["keyword"].lower(): r for r in rows}
     # Case-insensitive grouping; counted once per opportunity.
@@ -123,4 +129,5 @@ def test_dashboard_route_renders(app_client, monkeypatch):
     body = response.data.decode("utf-8")
     assert "Keyword Dashboard" in body
     assert "Python" in body
-    assert "100.0%" in body
+    # Default scope counts all 4 jobs (incl. the closed one): Python is in 3.
+    assert "75.0%" in body

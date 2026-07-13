@@ -63,12 +63,15 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         filters["keywords"] = {"$regex": pattern, "$options": "i"}
         echo["keyword"] = keyword
 
-    # Active jobs only by default; ?archived=1 shows the archived ones instead.
-    if request.args.get("archived") in {"1", "true", "yes", "on"}:
-        filters["archived"] = True
-        echo["archived"] = 1
-    else:
-        filters["archived"] = {"$ne": True}
+    # All jobs by default; ?state=open or ?state=closed narrows to one state.
+    # A job with no stored state counts as open.
+    state = request.args.get("state", "").strip().lower()
+    if state == "open":
+        filters["state"] = {"$ne": "closed"}
+        echo["state"] = "open"
+    elif state == "closed":
+        filters["state"] = "closed"
+        echo["state"] = "closed"
 
     return filters, echo
 
@@ -134,7 +137,6 @@ def list_jobs():
                 "status": job.get("status"),
                 "user_status": job.get("user_status"),
                 "state": job.get("state") or "open",
-                "archived": bool(job.get("archived")),
                 "created_at": _format_date(job.get("created_at")),
             }
         )
@@ -147,7 +149,7 @@ def list_jobs():
         total=total,
         total_pages=total_pages,
         filters=echo,
-        viewing_archived=bool(echo.get("archived")),
+        state_filter=echo.get("state", "all"),
     )
 
 
@@ -192,9 +194,9 @@ def save_job(job_id: str):
     return redirect(url_for("jobs.get_job", job_id=job_id))
 
 
-@jobs_bp.route("/<job_id>/archive", methods=["POST"])
-def archive_job(job_id: str):
-    """Archive or unarchive a job so it is excluded from / included in matching."""
+@jobs_bp.route("/<job_id>/state", methods=["POST"])
+def set_job_state(job_id: str):
+    """Set a job's state: close it (mark no longer open) or reopen it."""
     db, error = _get_db_or_error()
     if error:
         return error
@@ -203,8 +205,8 @@ def archive_job(job_id: str):
     if error:
         return error
 
-    archived = request.form.get("archived") == "1"
-    result = db.jobs.update_one({"_id": oid}, {"$set": {"archived": archived}})
+    state = "closed" if request.form.get("state") == "closed" else "open"
+    result = db.jobs.update_one({"_id": oid}, {"$set": {"state": state}})
     if result.matched_count == 0:
         return jsonify({"error": "job not found"}), 404
 

@@ -166,19 +166,20 @@
       </label>
       <label>
         Show
-        <select name="scope">
-          <option value="active" {% if scope != 'all' %}selected{% endif %}>Active only</option>
-          <option value="all" {% if scope == 'all' %}selected{% endif %}>All</option>
+        <select name="state">
+          <option value="all" {% if state == 'all' %}selected{% endif %}>All</option>
+          <option value="open" {% if state == 'open' %}selected{% endif %}>Open only</option>
+          <option value="closed" {% if state == 'closed' %}selected{% endif %}>Closed only</option>
         </select>
       </label>
       <button type="submit">Apply</button>
-      {% if must or cannot or scope == 'all' %}
+      {% if must or cannot or state != 'all' %}
         <a href="{{ url_for('dashboard.view_dashboard') }}" style="margin-left: 0.5rem;">Clear</a>
       {% endif %}
     </form>
 
     <p class="hint">
-      Based on {{ total_jobs }} {% if scope == 'all' %}total{% else %}active{% endif %} opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} matching the filters{% endif %}.
+      Based on {{ total_jobs }} {% if state == 'all' %}total{% else %}{{ state }}{% endif %} opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} matching the filters{% endif %}.
       Each keyword's count is the number of opportunities that list it; the
       percentage is its share of those opportunities.
     </p>

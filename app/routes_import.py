@@ -55,7 +55,7 @@ STATUS_IMPORTED = "imported"
 STATUS_UNPROCESSED = "unprocessed"
 STATUS_STAGED = "staged"
 
-# An opportunity's posting state, independent of ``archived`` (a user reject).
+# An opportunity's posting state — the single flag that governs a job's status.
 # Missing/blank/unknown counts as open. Closed opportunities are still stored
 # (matched ones close the existing job; unmatched ones import as a closed record
 # kept for statistical/keyword analysis).
@@ -254,19 +254,20 @@ def _make_candidate(
     }
 
 
-def _active_candidates(db) -> List[Dict[str, Any]]:
-    """Comparison candidates from non-archived jobs in the database.
+def _all_candidates(db) -> List[Dict[str, Any]]:
+    """Comparison candidates from every job in the database.
 
-    Both open and closed jobs are candidates (state is not filtered) — an
-    incoming opportunity, whether open or closed, is matched against every
-    non-archived job. Only ``archived`` (a user reject) removes a job from here.
+    Matching never filters on state: an incoming opportunity, whether open or
+    closed, is compared against every existing job (open and closed alike). This
+    keeps dedup total, so a re-imported role matches its existing record instead
+    of creating a duplicate.
     """
     return [
         _make_candidate(
             doc.get("title"), doc.get("company"), doc.get("url"),
             doc.get("description_text"),
         )
-        for doc in db.jobs.find({"archived": {"$ne": True}})
+        for doc in db.jobs.find({})
     ]
 
 
@@ -284,10 +285,10 @@ def _best_similarity(
 
 
 def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
-    """Annotate each parsed job with how it matches active/earlier opportunities.
+    """Annotate each parsed job with how it matches existing/earlier opportunities.
 
-    Each incoming job is compared against active (non-archived) jobs already in
-    the database AND against earlier jobs in the same upload. Precedence:
+    Each incoming job is compared against every job already in the database
+    (open and closed) AND against earlier jobs in the same upload. Precedence:
       1. ``url``                - same identifying URL.
       2. ``title_company``      - same normalized title + company.
       3. ``similar_description``- description >= SIMILARITY_THRESHOLD vs a DB job.
@@ -297,7 +298,7 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
     Every row carries the best similarity percent found, so even ``new`` rows
     show how close their nearest active match is.
     """
-    db_candidates = _active_candidates(db)
+    db_candidates = _all_candidates(db)
     db_urls = {c["url"]: c for c in db_candidates if c["url"]}
     db_tc = {c["tc"]: c for c in db_candidates}
     seen: List[Dict[str, Any]] = []
@@ -463,17 +464,17 @@ def parse_urls(raw_text: str) -> List[str]:
 def stage_urls(db, urls: List[str], source: Optional[str] = None) -> Dict[str, int]:
     """Pre-stage bare job URLs as ``unprocessed`` records for later enrichment.
 
-    Each URL is checked against active (non-archived) imported jobs and against
-    every staging record (pending or staged); only genuinely new, identifying
-    URLs are inserted. An MCP client retrieves these via ``find_pending_urls``,
-    enriches them and imports a file, which promotes them to ``staged``.
+    Each URL is checked against every imported job and against every staging
+    record (pending or staged); only genuinely new, identifying URLs are
+    inserted. An MCP client retrieves these via ``find_pending_urls``, enriches
+    them and imports a file, which promotes them to ``staged``.
 
     Returns ``{"added", "skipped", "invalid"}`` — skipped: already known;
     invalid: malformed or a non-identifying search/results URL.
     """
     job_urls = {
         key
-        for doc in db.jobs.find({"archived": {"$ne": True}})
+        for doc in db.jobs.find({})
         if (key := _identifying_url(doc.get("url")))
     }
     staged_urls = {
@@ -635,19 +636,19 @@ def clear_urls():
 
 
 def _find_existing_job(db, job: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """The non-archived job this opportunity matches, or None.
+    """The existing job this opportunity matches, or None.
 
-    Candidates span both open and closed jobs (state is not filtered), so a
-    closed import can close a job that is currently open or already closed.
-    Precedence mirrors :func:`match_jobs`: a single-posting URL first, then
-    title + company. Fuzzy description similarity is deliberately excluded — it
-    is too soft a signal to auto-close a different posting on.
+    Candidates span every job (state is not filtered), so a closed import can
+    close a job that is currently open or already closed. Precedence mirrors
+    :func:`match_jobs`: a single-posting URL first, then title + company. Fuzzy
+    description similarity is deliberately excluded — it is too soft a signal to
+    auto-close a different posting on.
     """
     url_key = _identifying_url(job.get("url"))
     tc_key = _title_company_key(job.get("title"), job.get("company"))
     url_match: Optional[Dict[str, Any]] = None
     tc_match: Optional[Dict[str, Any]] = None
-    for doc in db.jobs.find({"archived": {"$ne": True}}):
+    for doc in db.jobs.find({}):
         if url_key and url_match is None and _identifying_url(doc.get("url")) == url_key:
             url_match = doc
         if tc_match is None and _title_company_key(doc.get("title"), doc.get("company")) == tc_key:

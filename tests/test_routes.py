@@ -93,11 +93,11 @@ def test_jobs_list_search_escapes_special_characters(app_client, monkeypatch):
     assert "Python Engineer" not in body
 
 
-def test_jobs_list_excludes_archived_by_default(app_client, monkeypatch):
+def test_jobs_list_shows_all_states_and_filters(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[
-            {"_id": ObjectId(), "title": "Active Role", "company": "Acme"},
-            {"_id": ObjectId(), "title": "Old Role", "company": "Acme", "archived": True},
+            {"_id": ObjectId(), "title": "Open Role", "company": "Acme", "state": "open"},
+            {"_id": ObjectId(), "title": "Closed Role", "company": "Acme", "state": "closed"},
         ],
         profiles=[],
     )
@@ -106,19 +106,22 @@ def test_jobs_list_excludes_archived_by_default(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    active = app_client.get("/jobs").data.decode("utf-8")
-    assert "Active Role" in active
-    assert "Old Role" not in active
+    # Default: all states shown.
+    everything = app_client.get("/jobs").data.decode("utf-8")
+    assert "Open Role" in everything and "Closed Role" in everything
 
-    archived = app_client.get("/jobs?archived=1").data.decode("utf-8")
-    assert "Old Role" in archived
-    assert "Active Role" not in archived
+    # Narrow by state.
+    open_only = app_client.get("/jobs?state=open").data.decode("utf-8")
+    assert "Open Role" in open_only and "Closed Role" not in open_only
+
+    closed_only = app_client.get("/jobs?state=closed").data.decode("utf-8")
+    assert "Closed Role" in closed_only and "Open Role" not in closed_only
 
 
-def test_archive_job_route(app_client, monkeypatch):
+def test_set_job_state_route(app_client, monkeypatch):
     job_id = ObjectId()
     fake_db = FakeDB(
-        jobs=[{"_id": job_id, "title": "Role", "company": "Acme"}],
+        jobs=[{"_id": job_id, "title": "Role", "company": "Acme", "state": "open"}],
         profiles=[],
     )
 
@@ -126,12 +129,12 @@ def test_archive_job_route(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    response = app_client.post(f"/jobs/{job_id}/archive", data={"archived": "1"})
+    response = app_client.post(f"/jobs/{job_id}/state", data={"state": "closed"})
     assert response.status_code == 302
-    assert fake_db.jobs.find_one({"_id": job_id})["archived"] is True
+    assert fake_db.jobs.find_one({"_id": job_id})["state"] == "closed"
 
-    response = app_client.post(f"/jobs/{job_id}/archive", data={"archived": "0"})
-    assert fake_db.jobs.find_one({"_id": job_id})["archived"] is False
+    response = app_client.post(f"/jobs/{job_id}/state", data={"state": "open"})
+    assert fake_db.jobs.find_one({"_id": job_id})["state"] == "open"
 
 
 def test_job_detail_route(app_client, monkeypatch):
