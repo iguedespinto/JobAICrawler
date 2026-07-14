@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from datetime import datetime, timezone
+from html import unescape
+from typing import Any, Dict, List, Optional, Tuple
 
+import nh3
 from bson import ObjectId
 from bson.errors import InvalidId
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
 from . import get_db
+
+# Rich-text descriptions are stored as sanitised HTML. Only these formatting
+# tags/attributes survive; scripts, styles, event handlers and unknown tags are
+# stripped so pasted content from arbitrary sites is safe to render back.
+_ALLOWED_TAGS = {
+    "p", "br", "b", "strong", "i", "em", "u", "s", "ul", "ol", "li",
+    "a", "h1", "h2", "h3", "h4", "blockquote", "code", "pre",
+}
+_ALLOWED_ATTRS = {"a": {"href", "title"}}
+_TAG_RE = re.compile(r"<[^>]+>")
+_BLOCK_BOUNDARY_RE = re.compile(r"(?i)<\s*/?(br|/?p|/?li|/?h[1-6]|/?div|/?ul|/?ol)\s*/?>")
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
@@ -207,6 +220,63 @@ def set_job_state(job_id: str):
 
     state = "closed" if request.form.get("state") == "closed" else "open"
     result = db.jobs.update_one({"_id": oid}, {"$set": {"state": state}})
+    if result.matched_count == 0:
+        return jsonify({"error": "job not found"}), 404
+
+    return redirect(url_for("jobs.get_job", job_id=job_id))
+
+
+def _parse_keywords(raw: str) -> List[str]:
+    """Split a comma-separated keywords input into a clean list."""
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _sanitize_description_html(raw: str) -> str:
+    """Sanitise pasted rich-text HTML down to a safe formatting allowlist."""
+    cleaned = nh3.clean(raw or "", tags=_ALLOWED_TAGS, attributes=_ALLOWED_ATTRS)
+    # Formatting-only markup (a lone <br>, empty <p>, …) carries no content.
+    return cleaned if _html_to_text(cleaned) else ""
+
+
+def _html_to_text(html: str) -> str:
+    """Flatten HTML to plain text for search / import matching (no tags)."""
+    if not html:
+        return ""
+    # Turn block boundaries into spaces so words/bullets don't run together.
+    text = _BLOCK_BOUNDARY_RE.sub(" ", html)
+    text = _TAG_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", unescape(text)).strip()
+
+
+@jobs_bp.route("/<job_id>/edit", methods=["POST"])
+def edit_job(job_id: str):
+    """Update an opportunity's editable fields. Works for any state.
+
+    The description is rich text: the submitted HTML is sanitised and stored in
+    ``description_html``; a tag-stripped copy is kept in ``description_text`` so
+    search, matching and the MCP API stay plain-text.
+    """
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    oid, error = _parse_job_id(job_id)
+    if error:
+        return error
+
+    description_html = _sanitize_description_html(request.form.get("description_html", ""))
+    update: Dict[str, Any] = {
+        "title": request.form.get("title", "").strip(),
+        "company": request.form.get("company", "").strip(),
+        "location": request.form.get("location", "").strip(),
+        "url": request.form.get("url", "").strip(),
+        "salary": request.form.get("salary", "").strip(),
+        "description_html": description_html,
+        "description_text": _html_to_text(description_html),
+        "keywords": _parse_keywords(request.form.get("keywords", "")),
+        "updated_at": datetime.now(timezone.utc),
+    }
+    result = db.jobs.update_one({"_id": oid}, {"$set": update})
     if result.matched_count == 0:
         return jsonify({"error": "job not found"}), 404
 

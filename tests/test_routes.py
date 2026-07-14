@@ -165,3 +165,62 @@ def test_job_detail_route(app_client, monkeypatch):
     assert "Backend Engineer" in body
     assert "Role details" in body
     assert "Python" in body
+
+
+def test_edit_job_route_updates_fields(app_client, monkeypatch):
+    job_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[
+            {
+                "_id": job_id,
+                "title": "Backend Engineer",
+                "company": "Acme",
+                "location": "Remote",
+                "salary": "€90,000",
+                "keywords": ["Python", "Flask"],
+                "description_text": "Old details",
+                "url": "https://example.com/jobs/1",
+                "state": "closed",  # editing must work for closed jobs too
+            }
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    response = app_client.post(
+        f"/jobs/{job_id}/edit",
+        data={
+            "title": "Senior Backend Engineer",
+            "company": "Globex",
+            "location": "Dublin",
+            "url": "https://example.com/jobs/2",
+            "salary": "€120,000",
+            "keywords": "Python, Django , AWS",
+            "description_html": (
+                "<p>New <b>bold</b> details</p>"
+                "<ul><li>first</li><li>second</li></ul>"
+                "<script>alert('xss')</script>"
+            ),
+        },
+    )
+    assert response.status_code == 302
+
+    job = fake_db.jobs.find_one({"_id": job_id})
+    assert job["title"] == "Senior Backend Engineer"
+    assert job["company"] == "Globex"
+    assert job["location"] == "Dublin"
+    assert job["url"] == "https://example.com/jobs/2"
+    assert job["salary"] == "€120,000"
+    assert job["keywords"] == ["Python", "Django", "AWS"]
+    # Rich text: formatting kept, script stripped.
+    assert "<b>bold</b>" in job["description_html"]
+    assert "<li>first</li>" in job["description_html"]
+    assert "script" not in job["description_html"].lower()
+    # Plain-text copy has no tags but keeps the words (for search / matching).
+    assert "<" not in job["description_text"]
+    assert "bold" in job["description_text"] and "second" in job["description_text"]
+    # Editing does not change the state.
+    assert job["state"] == "closed"
