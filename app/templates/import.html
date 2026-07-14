@@ -68,8 +68,8 @@
       processing. They are checked against imported jobs and staged records, then
       held here — hidden from the staging table below — until an MCP client
       retrieves, validates and imports them, at which point they become viewable
-      opportunities. Tracking parameters (utm_*, etc.) are stripped, and
-      search/results-page URLs are rejected.</p>
+      opportunities. URLs are reduced to their base (query/tracking parameters
+      are stripped), and search/results-page URLs are rejected.</p>
     <form method="post" action="{{ url_for('import_jobs.add_urls') }}">
       <textarea name="urls" rows="4" style="width: 100%; box-sizing: border-box;"
                 placeholder="https://example.com/jobs/123&#10;https://example.com/jobs/456"></textarea>

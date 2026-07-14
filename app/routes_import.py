@@ -145,25 +145,26 @@ def _is_valid_url(value: Any) -> bool:
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
 
 
-# Marketing/tracking query parameters to drop when queueing a URL. ``utm_*`` is
-# matched by prefix. Params that identify the posting (e.g. Indeed's ``jk``) are
-# deliberately NOT listed, so those URLs keep working.
-_TRACKING_PARAM_NAMES = {
-    "position", "count", "ref", "referrer", "source", "src", "medium",
-    "campaign", "gclid", "fbclid", "msclkid", "dclid", "gclsrc", "gbraid",
-    "wbraid", "yclid", "mc_cid", "mc_eid", "igshid", "igsh", "spm",
-    "_hsenc", "_hsmi", "__hstc", "__hssc", "__hsfp", "vero_id", "vero_conv",
-    "trk", "trackingid", "refid", "ns_campaign", "ns_mchannel", "ns_source",
-    "wt.mc_id",
+# Query parameters that genuinely identify a posting and must be kept when a
+# queued URL is reduced to its base. Everything else (tracking, marketing,
+# navigation context like LinkedIn's ``alternateChannel``) is dropped. Most job
+# sites put the id in the path; the notable exception kept here is Indeed's
+# ``jk``. Compared case-insensitively.
+_IDENTIFYING_QUERY_PARAMS = {
+    "jk",            # Indeed job key (…/viewjob?jk=)
+    "jobid", "job_id",
+    "gh_jid",        # Greenhouse
+    "jl", "joblistingid",  # Glassdoor
 }
 
 
-def _strip_tracking_params(value: Any) -> str:
-    """Return the URL with tracking params and the fragment removed.
+def _strip_url_params(value: Any) -> str:
+    """Reduce a queued URL to its base URL.
 
-    Drops ``utm_*`` and other known marketing/tracking parameters plus the
-    ``#fragment``; keeps any remaining (identifying) query parameters. Leaves a
-    value untouched if it is not a full http(s) URL.
+    Keeps the scheme, host and path plus only genuinely identifying query
+    parameters (see ``_IDENTIFYING_QUERY_PARAMS``); drops every other query
+    parameter and the ``#fragment``. A value that is not a full http(s) URL is
+    returned unchanged.
     """
     text = str(value or "").strip()
     if not text:
@@ -174,8 +175,7 @@ def _strip_tracking_params(value: Any) -> str:
     kept = [
         (key, val)
         for key, val in parse_qsl(parts.query, keep_blank_values=True)
-        if key.lower() not in _TRACKING_PARAM_NAMES
-        and not key.lower().startswith("utm_")
+        if key.lower() in _IDENTIFYING_QUERY_PARAMS
     ]
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
 
@@ -523,9 +523,9 @@ def stage_urls(db, urls: List[str], source: Optional[str] = None) -> Dict[str, i
     added = skipped = invalid = 0
 
     for raw in urls:
-        # Strip tracking params / fragments so the queued URL is clean and the
-        # same posting from different links dedupes to one entry.
-        text = _strip_tracking_params(raw)
+        # Reduce to the base URL (drop tracking params / fragments) so the queued
+        # URL is clean and the same posting from different links dedupes to one.
+        text = _strip_url_params(raw)
         if not _is_valid_url(text):
             invalid += 1
             continue
