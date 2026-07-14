@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Target Companies &amp; Roles</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; }
+      .nav a { margin-right: 1rem; }
+      .flash { background: #fff3cd; border: 1px solid #ffe69c; padding: 0.75rem; margin-bottom: 1rem; }
+      .cols { display: flex; flex-wrap: wrap; gap: 2rem; }
+      .col { flex: 1; min-width: 280px; }
+      ul.targets { list-style: none; padding: 0; margin: 0.5rem 0; max-width: 420px; }
+      ul.targets li { display: flex; justify-content: space-between; align-items: center;
+                      border: 1px solid #ddd; padding: 0.4rem 0.6rem; margin-bottom: 0.3rem; }
+      .btn-delete { background: #e74c3c; color: #fff; border: none; padding: 0.25rem 0.6rem;
+                    border-radius: 3px; cursor: pointer; font-size: 0.8rem; }
+      .btn-delete:hover { background: #c0392b; }
+      .add-form input[type="text"] { padding: 0.4rem; width: 60%; }
+      .empty { color: #999; font-style: italic; }
+    </style>
+  </head>
+  <body>
+    <div class="nav">
+      <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
+      <a href="{{ url_for('dashboard.view_dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('import_jobs.import_form') }}">Import</a>
+      <a href="{{ url_for('keywords.manage_keywords') }}">Keywords</a>
+      <a href="{{ url_for('targets.manage_targets') }}">Targets</a>
+      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
+    </div>
+
+    <h1>Targets</h1>
+    <p>Companies, roles, search sites and other relevant factors you are
+       targeting. These are read by the MCP server so searches can focus on them.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for message in messages %}
+          <div class="flash">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="cols">
+      {% for section in sections %}
+        <div class="col">
+          <h2>{{ section.title }}</h2>
+          {% if section.entries %}
+            <ul class="targets">
+              {% for item in section.entries %}
+                <li>
+                  <span>{{ item.name }}</span>
+                  <form method="post" action="{{ url_for('targets.delete_target_route') }}"
+                        onsubmit="return confirm('Remove &quot;{{ item.name }}&quot;?');">
+                    <input type="hidden" name="id" value="{{ item.id }}" />
+                    <button type="submit" class="btn-delete">Remove</button>
+                  </form>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty">No target {{ section.title | lower }} yet.</p>
+          {% endif %}
+
+          <form method="post" action="{{ url_for('targets.add_target_route') }}" class="add-form">
+            <input type="hidden" name="kind" value="{{ section.kind }}" />
+            <input type="text" name="name" placeholder="Add a {{ section.kind | replace('_', ' ') }}…" />
+            <button type="submit">Add</button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  </body>
+</html>

@@ -9,6 +9,8 @@ Exposes tools that a Claude Code routine (or the desktop app) can call to:
   client can validate them and prepare a file to import.
 - Retrieve job offers from the database (``find_jobs``) and change their
   state (``update_job_status`` — open/closed, set saved/applied).
+- Read and manage the target companies and roles to focus searches on
+  (``list_targets`` / ``add_target`` / ``remove_target``).
 
 Run directly for stdio transport (how Claude Code launches it):
 
@@ -26,6 +28,7 @@ from bson.errors import InvalidId
 from dotenv import load_dotenv
 from pymongo import MongoClient
 
+from app import routes_targets
 from app.routes_import import STATUS_UNPROCESSED, parse_jobs, stage_jobs
 
 try:
@@ -414,6 +417,53 @@ def update_job_status(
         return {"job": update_job_status_in_db(db, job_id, state, user_status)}
     except InvalidId:
         return {"error": "invalid job_id"}
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+# ── Target companies & roles ─────────────────────────────────────────
+
+
+@mcp.tool()
+def list_targets() -> Dict[str, Any]:
+    """List the targets to focus searches on.
+
+    Returns ``{"companies", "roles", "search_sites", "factors"}`` — each a list
+    of entries with an ``id`` and ``name``. Use these to drive which companies,
+    roles and sites to search, and which other factors to weigh.
+    """
+    try:
+        db = _get_db()
+        return routes_targets.list_targets(db)
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+@mcp.tool()
+def add_target(kind: str, name: str) -> Dict[str, Any]:
+    """Add a target company, role, search site or other relevant factor.
+
+    Args:
+        kind: 'company', 'role', 'search_site' or 'factor'.
+        name: The value to add (case-insensitive duplicates are skipped).
+
+    Returns the target with an ``added`` flag (False if it already existed).
+    """
+    try:
+        db = _get_db()
+        return {"target": routes_targets.add_target(db, kind, name)}
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+@mcp.tool()
+def remove_target(target_id: str) -> Dict[str, Any]:
+    """Remove a target company or role by its id (from list_targets)."""
+    try:
+        db = _get_db()
+        return {"removed": routes_targets.remove_target(db, target_id)}
+    except InvalidId:
+        return {"error": "invalid target_id"}
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
