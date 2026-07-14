@@ -191,6 +191,25 @@
           row.classList.remove("editing");
         }
       });
+
+      // Actions POST and reload; keep the user where they were instead of
+      // jumping to the top. Save the scroll position on submit, restore it as
+      // the reloaded page paints.
+      (function () {
+        var KEY = "targets-scroll-y";
+        if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+        document.addEventListener("submit", function () {
+          try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+        });
+        var saved = null;
+        try { saved = sessionStorage.getItem(KEY); } catch (e) {}
+        if (saved !== null) {
+          try { sessionStorage.removeItem(KEY); } catch (e) {}
+          var y = parseInt(saved, 10) || 0;
+          window.scrollTo(0, y);  // before first paint (script is end-of-body)
+          window.addEventListener("load", function () { window.scrollTo(0, y); });
+        }
+      })();
     </script>
   </body>
 </html>
