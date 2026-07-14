@@ -56,36 +56,39 @@ def _jobs_db():
             {"_id": ObjectId(), "title": "Frontend Engineer", "company": "Globex",
              "keywords": ["React"], "description_text": "Build UIs"},
             {"_id": ObjectId(), "title": "Old Role", "company": "Acme",
-             "keywords": ["Python"], "archived": True},
+             "keywords": ["Python"], "state": "closed"},
         ],
         profiles=[],
     )
 
 
-def test_find_jobs_query_and_active_scope():
+def test_find_jobs_query_spans_all_states():
     db = _jobs_db()
-    # Active only by default; matches keyword/description/title case-insensitively.
+    # No state filter by default: open and closed both returned.
     jobs = mcp_server.find_jobs_in_db(db, query="python")
     titles = {j["title"] for j in jobs}
     assert "Backend Engineer" in titles
-    assert "Old Role" not in titles  # archived excluded
-    assert all(j["archived"] is False for j in jobs)
+    assert "Old Role" in titles  # closed job still returned
+    assert all("state" in j for j in jobs)
 
 
-def test_find_jobs_include_archived_and_company():
+def test_find_jobs_state_filter_and_company():
     db = _jobs_db()
-    jobs = mcp_server.find_jobs_in_db(db, company="acme", include_archived=True)
-    titles = {j["title"] for j in jobs}
-    assert titles == {"Backend Engineer", "Old Role"}
+    # Only open Acme jobs (Old Role is closed).
+    jobs = mcp_server.find_jobs_in_db(db, company="acme", state="open")
+    assert {j["title"] for j in jobs} == {"Backend Engineer"}
+    # Only closed Acme jobs.
+    closed = mcp_server.find_jobs_in_db(db, company="acme", state="closed")
+    assert {j["title"] for j in closed} == {"Old Role"}
 
 
-def test_update_job_status_archive_and_user_status():
+def test_update_job_status_state_and_user_status():
     db = _jobs_db()
     job = db.jobs.find_one({"title": "Backend Engineer"})
     jid = str(job["_id"])
 
-    updated = mcp_server.update_job_status_in_db(db, jid, archived=True)
-    assert updated["archived"] is True
+    updated = mcp_server.update_job_status_in_db(db, jid, state="closed")
+    assert updated["state"] == "closed"
 
     updated = mcp_server.update_job_status_in_db(db, jid, user_status="applied")
     assert updated["user_status"] == "applied"
@@ -103,9 +106,11 @@ def test_update_job_status_validates():
     with _pytest.raises(ValueError):
         mcp_server.update_job_status_in_db(db, jid, user_status="bogus")
     with _pytest.raises(ValueError):
+        mcp_server.update_job_status_in_db(db, jid, state="bogus")  # bad state
+    with _pytest.raises(ValueError):
         mcp_server.update_job_status_in_db(db, jid)  # nothing to update
     with _pytest.raises(ValueError):
-        mcp_server.update_job_status_in_db(db, str(ObjectId()), archived=True)  # not found
+        mcp_server.update_job_status_in_db(db, str(ObjectId()), state="closed")  # not found
 
 
 def test_find_jobs_pagination_covers_all_without_overlap():

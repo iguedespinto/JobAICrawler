@@ -11,90 +11,191 @@
       .badge { font-size: 0.8rem; padding: 0.1rem 0.45rem; border-radius: 3px; color: #fff; }
       .badge.open { background: #00695c; }
       .badge.closed { background: #37474f; }
+      .edit-form label { display: block; margin-bottom: 0.75rem; font-weight: bold; max-width: 640px; }
+      .edit-form label .meta, .field-label .meta { font-weight: normal; }
+      .edit-form input, .edit-form textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 0.2rem; padding: 0.4rem; font: inherit; }
+      .field { max-width: 640px; margin-bottom: 0.75rem; }
+      .field-label { font-weight: bold; }
+      .rt-toolbar { margin: 0.2rem 0; }
+      .rt-toolbar button { margin-right: 0.25rem; padding: 0.2rem 0.5rem; }
+      .rich-editor { border: 1px solid #ccc; padding: 0.5rem; min-height: 8rem; margin-top: 0.2rem; }
+      .rich-editor:focus { outline: 2px solid #00695c; }
+      .rich-editor ul, .rich-editor ol, .rich-content ul, .rich-content ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+      .rich-content p, .rich-editor p { margin: 0.5rem 0; }
     </style>
   </head>
   <body>
     <a href="{{ url_for('jobs.list_jobs') }}">← Back to list</a>
-    <h1>{{ job.title }}</h1>
-    <div class="meta">{{ job.company }} · {{ job.location }}</div>
+
     {% set st = job.state or 'open' %}
-    <div class="meta">State: <span class="badge {{ st }}">{{ st }}</span></div>
-    {% if job.url %}
-      <div class="meta"><a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">Job link</a></div>
-    {% else %}
-      <div class="meta">Job link: n/a</div>
-    {% endif %}
 
-    {% if job.salary %}
-      <div class="meta">Salary: {{ job.salary }}</div>
-    {% endif %}
+    <!-- READ MODE: read-only display, no edit fields. -->
+    <div id="read-view">
+      <div class="section" style="margin-top: 1rem;">
+        <button type="button" id="edit-btn">Edit</button>
+      </div>
 
-    <div class="section">
-      <h2>Keywords</h2>
-      {% if job.keywords %}
-        {% for keyword in job.keywords %}
-          <span class="tag">{{ keyword }}</span>
-        {% endfor %}
+      <h1>{{ job.title }}</h1>
+      <div class="meta">{{ job.company }} · {{ job.location }}</div>
+      <div class="meta">State: <span class="badge {{ st }}">{{ st }}</span></div>
+      {% if job.url %}
+        <div class="meta"><a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">Job link</a></div>
       {% else %}
-        <span class="meta">n/a</span>
+        <div class="meta">Job link: n/a</div>
+      {% endif %}
+
+      {% if job.salary %}
+        <div class="meta">Salary: {{ job.salary }}</div>
+      {% endif %}
+
+      <div class="section">
+        <h2>Keywords</h2>
+        {% if job.keywords %}
+          {% for keyword in job.keywords %}
+            <span class="tag">{{ keyword }}</span>
+          {% endfor %}
+        {% else %}
+          <span class="meta">n/a</span>
+        {% endif %}
+      </div>
+
+      <div class="section">
+        <h2>Description</h2>
+        {% if job.description_html %}
+          <div class="rich-content">{{ job.description_html | safe }}</div>
+        {% else %}
+          <p style="white-space: pre-line;">{{ job.description_text }}</p>
+        {% endif %}
+      </div>
+
+      <div class="section">
+        <h2>Save or apply</h2>
+        <form method="post" action="{{ url_for('jobs.save_job', job_id=job.id) }}">
+          <select name="user_status">
+            <option value="saved" {% if job.user_status == 'saved' %}selected{% endif %}>Saved</option>
+            <option value="applied" {% if job.user_status == 'applied' %}selected{% endif %}>Applied</option>
+            <option value="none" {% if not job.user_status %}selected{% endif %}>None</option>
+          </select>
+          <button type="submit">Update</button>
+        </form>
+      </div>
+
+      <div class="section">
+        <h2>State</h2>
+        <p class="meta">
+          {% if st == 'closed' %}
+            This opportunity is closed (no longer accepting applications).
+          {% else %}
+            This opportunity is open.
+          {% endif %}
+          All jobs are compared against when matching imports, regardless of state.
+        </p>
+        <form method="post" action="{{ url_for('jobs.set_job_state', job_id=job.id) }}">
+          {% if st == 'closed' %}
+            <input type="hidden" name="state" value="open" />
+            <button type="submit">Reopen</button>
+          {% else %}
+            <input type="hidden" name="state" value="closed" />
+            <button type="submit">Close</button>
+          {% endif %}
+        </form>
+      </div>
+
+      {% if job.url %}
+        <div class="section">
+          <h2>Job posting</h2>
+          <p class="meta">
+            Some job sites block embedding; if the preview below is blank,
+            <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">open it in a new window</a>.
+          </p>
+          <iframe
+            src="{{ job.url }}"
+            title="Job posting"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            style="width: 100%; height: 80vh; border: 1px solid #ddd;"></iframe>
+        </div>
       {% endif %}
     </div>
 
-    <div class="section">
-      <h2>Description</h2>
-      <p style="white-space: pre-line;">{{ job.description_text }}</p>
-    </div>
-
-    <div class="section">
-      <h2>Save or apply</h2>
-      <form method="post" action="{{ url_for('jobs.save_job', job_id=job.id) }}">
-        <select name="user_status">
-          <option value="saved" {% if job.user_status == 'saved' %}selected{% endif %}>Saved</option>
-          <option value="applied" {% if job.user_status == 'applied' %}selected{% endif %}>Applied</option>
-          <option value="none" {% if not job.user_status %}selected{% endif %}>None</option>
-        </select>
-        <button type="submit">Update</button>
+    <!-- EDIT MODE: only editable fields, hidden until Edit is clicked. -->
+    <div id="edit-view" style="display: none;">
+      <h1>Edit opportunity</h1>
+      <p class="meta">Edit any field and save. Available for open and closed opportunities.</p>
+      <form method="post" action="{{ url_for('jobs.edit_job', job_id=job.id) }}" class="edit-form" id="edit-form">
+        <label>Title
+          <input type="text" name="title" value="{{ job.title or '' }}" />
+        </label>
+        <label>Company
+          <input type="text" name="company" value="{{ job.company or '' }}" />
+        </label>
+        <label>Location
+          <input type="text" name="location" value="{{ job.location or '' }}" />
+        </label>
+        <label>URL
+          <input type="text" name="url" value="{{ job.url or '' }}" />
+        </label>
+        <label>Salary
+          <input type="text" name="salary" value="{{ job.salary or '' }}" />
+        </label>
+        <label>Keywords <span class="meta">(comma-separated)</span>
+          <input type="text" name="keywords" value="{{ job.keywords | join(', ') if job.keywords else '' }}" />
+        </label>
+        <div class="field">
+          <div class="field-label">Description <span class="meta">(paste keeps bold, lists, etc.)</span></div>
+          <div class="rt-toolbar">
+            <button type="button" data-cmd="bold" title="Bold"><b>B</b></button>
+            <button type="button" data-cmd="italic" title="Italic"><i>I</i></button>
+            <button type="button" data-cmd="insertUnorderedList" title="Bullet list">&bull; List</button>
+            <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+            <button type="button" data-cmd="removeFormat" title="Clear formatting">Clear</button>
+          </div>
+          <div id="desc-editor" class="rich-editor" contenteditable="true">{% if job.description_html %}{{ job.description_html | safe }}{% else %}{{ (job.description_text or '') | e | replace('\n', '<br>') | safe }}{% endif %}</div>
+        </div>
+        <input type="hidden" name="description_html" id="desc-html" />
+        <button type="submit">Save changes</button>
+        <button type="button" id="cancel-btn">Cancel</button>
       </form>
     </div>
-
-    <div class="section">
-      <h2>Archive</h2>
-      <p class="meta">
-        {% if job.archived %}
-          This job is archived and is excluded when matching imports.
-        {% else %}
-          This job is active and is compared against when matching imports.
-        {% endif %}
-      </p>
-      <form method="post" action="{{ url_for('jobs.archive_job', job_id=job.id) }}">
-        {% if job.archived %}
-          <input type="hidden" name="archived" value="0" />
-          <button type="submit">Unarchive</button>
-        {% else %}
-          <input type="hidden" name="archived" value="1" />
-          <button type="submit">Archive</button>
-        {% endif %}
-      </form>
-    </div>
-
-    {% if job.url %}
-      <div class="section">
-        <h2>Job posting</h2>
-        <p class="meta">
-          Some job sites block embedding; if the preview below is blank,
-          <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">open it in a new window</a>.
-        </p>
-        <iframe
-          src="{{ job.url }}"
-          title="Job posting"
-          loading="lazy"
-          referrerpolicy="no-referrer"
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-          style="width: 100%; height: 80vh; border: 1px solid #ddd;"></iframe>
-      </div>
-    {% endif %}
 
     <script>
+      // Toggle between read mode and edit mode (two separate blocks) and drive
+      // the rich-text description editor.
+      (function () {
+        var readView = document.getElementById("read-view");
+        var editView = document.getElementById("edit-view");
+        var editForm = document.getElementById("edit-form");
+        var editor = document.getElementById("desc-editor");
+        var descHtml = document.getElementById("desc-html");
+        var originalDesc = editor.innerHTML;
+
+        document.getElementById("edit-btn").addEventListener("click", function () {
+          readView.style.display = "none";
+          editView.style.display = "block";
+        });
+        document.getElementById("cancel-btn").addEventListener("click", function () {
+          editForm.reset();            // resets inputs
+          editor.innerHTML = originalDesc;  // contenteditable isn't reset by form.reset()
+          editView.style.display = "none";
+          readView.style.display = "block";
+        });
+
+        // Formatting toolbar (execCommand keeps pasted/typed formatting).
+        document.querySelectorAll(".rt-toolbar button[data-cmd]").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            editor.focus();
+            document.execCommand(btn.getAttribute("data-cmd"), false, null);
+          });
+        });
+
+        // The contenteditable div isn't a form field — copy its HTML into the
+        // hidden input just before the form submits. The server sanitises it.
+        editForm.addEventListener("submit", function () {
+          descHtml.value = editor.innerHTML;
+        });
+      })();
+
       // Open external job links in a separate window (not a new tab).
       document.querySelectorAll("a.ext-window").forEach(function (link) {
         link.addEventListener("click", function (e) {

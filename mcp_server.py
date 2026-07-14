@@ -8,7 +8,7 @@ Exposes tools that a Claude Code routine (or the desktop app) can call to:
 - Retrieve job URLs a user queued in the web UI (``find_pending_urls``) so the
   client can validate them and prepare a file to import.
 - Retrieve job offers from the database (``find_jobs``) and change their
-  status (``update_job_status`` — archive/unarchive, set saved/applied).
+  state (``update_job_status`` — open/closed, set saved/applied).
 
 Run directly for stdio transport (how Claude Code launches it):
 
@@ -227,7 +227,6 @@ def _job_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
         "url": doc.get("url"),
         "salary": doc.get("salary"),
         "keywords": doc.get("keywords", []),
-        "archived": bool(doc.get("archived")),
         "user_status": doc.get("user_status"),
         "status": doc.get("status"),
         "state": doc.get("state") or "open",
@@ -238,12 +237,14 @@ def _build_job_filter(
     query: Optional[str],
     company: Optional[str],
     keyword: Optional[str],
-    include_archived: bool,
+    state: Optional[str],
 ) -> Dict[str, Any]:
     """Build the Mongo filter shared by find/count."""
     filt: Dict[str, Any] = {}
-    if not include_archived:
-        filt["archived"] = {"$ne": True}
+    if state == "open":
+        filt["state"] = {"$ne": "closed"}
+    elif state == "closed":
+        filt["state"] = "closed"
     if company:
         filt["company"] = {"$regex": re.escape(company), "$options": "i"}
     if keyword:
@@ -263,11 +264,11 @@ def count_jobs_in_db(
     query: Optional[str] = None,
     company: Optional[str] = None,
     keyword: Optional[str] = None,
-    include_archived: bool = False,
+    state: Optional[str] = None,
 ) -> int:
     """Count job offers matching the filters (for pagination)."""
     return db.jobs.count_documents(
-        _build_job_filter(query, company, keyword, include_archived)
+        _build_job_filter(query, company, keyword, state)
     )
 
 
@@ -276,7 +277,7 @@ def find_jobs_in_db(
     query: Optional[str] = None,
     company: Optional[str] = None,
     keyword: Optional[str] = None,
-    include_archived: bool = False,
+    state: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
 ) -> List[Dict[str, Any]]:
@@ -285,11 +286,11 @@ def find_jobs_in_db(
     - ``query``: case-insensitive substring across title, keywords, description.
     - ``company``: case-insensitive substring on company.
     - ``keyword``: exact (case-insensitive) match against the keywords array.
-    - ``include_archived``: include archived jobs (default: active only).
+    - ``state``: 'open' or 'closed' to narrow by state (default: all).
     - ``page``: 1-based page number.
     - ``limit``: page size (1-100), newest first.
     """
-    filt = _build_job_filter(query, company, keyword, include_archived)
+    filt = _build_job_filter(query, company, keyword, state)
     limit = max(1, min(int(limit), 100))
     page = max(1, int(page))
     skip = (page - 1) * limit
@@ -308,19 +309,23 @@ def find_jobs_in_db(
 def update_job_status_in_db(
     db,
     job_id: str,
-    archived: Optional[bool] = None,
+    state: Optional[str] = None,
     user_status: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Change a job's status: archive/unarchive and/or set user_status.
+    """Change a job's state (open/closed) and/or set user_status.
 
-    ``user_status`` accepts 'saved', 'applied', or 'none'/'clear' (to unset).
-    Raises ValueError / InvalidId on bad input or missing job.
+    ``state`` accepts 'open' or 'closed'. ``user_status`` accepts 'saved',
+    'applied', or 'none'/'clear' (to unset). Raises ValueError / InvalidId on
+    bad input or missing job.
     """
     oid = ObjectId(job_id)  # raises InvalidId for malformed ids
 
     update: Dict[str, Any] = {}
-    if archived is not None:
-        update["archived"] = bool(archived)
+    if state is not None:
+        normalized_state = str(state).strip().lower()
+        if normalized_state not in {"open", "closed"}:
+            raise ValueError("state must be one of: open, closed")
+        update["state"] = normalized_state
     if user_status is not None:
         normalized = str(user_status).strip().lower()
         if normalized in {"none", "", "clear"}:
@@ -331,7 +336,7 @@ def update_job_status_in_db(
             raise ValueError("user_status must be one of: saved, applied, none")
 
     if not update:
-        raise ValueError("Nothing to update: provide archived and/or user_status.")
+        raise ValueError("Nothing to update: provide state and/or user_status.")
 
     result = db.jobs.update_one({"_id": oid}, {"$set": update})
     if result.matched_count == 0:
@@ -344,7 +349,7 @@ def find_jobs(
     query: str = "",
     company: str = "",
     keyword: str = "",
-    include_archived: bool = False,
+    state: str = "",
     page: int = 1,
     limit: int = 20,
 ) -> Dict[str, Any]:
@@ -354,7 +359,7 @@ def find_jobs(
         query: Case-insensitive text to match in title, keywords or description.
         company: Case-insensitive company filter.
         keyword: Exact keyword (from the keywords array) to filter by.
-        include_archived: Include archived jobs (default: active only).
+        state: 'open' or 'closed' to narrow by state (default: all states).
         page: 1-based page number (use with total_pages / has_more to iterate).
         limit: Page size (1-100), newest first.
 
@@ -367,7 +372,7 @@ def find_jobs(
             query=query or None,
             company=company or None,
             keyword=keyword or None,
-            include_archived=include_archived,
+            state=state or None,
         )
         total = count_jobs_in_db(db, **opts)
         jobs = find_jobs_in_db(db, page=page, limit=limit, **opts)
@@ -391,22 +396,22 @@ def find_jobs(
 @mcp.tool()
 def update_job_status(
     job_id: str,
-    archived: Optional[bool] = None,
+    state: Optional[str] = None,
     user_status: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Change a job offer's status by id.
+    """Change a job offer's state and/or user_status by id.
 
     Args:
         job_id: The job's id (from find_jobs).
-        archived: True to archive (mark inactive), False to unarchive.
+        state: 'closed' to close (mark no longer open), 'open' to reopen.
         user_status: 'saved', 'applied', or 'none' to clear. Optional.
 
-    At least one of archived / user_status must be provided. Returns the
+    At least one of state / user_status must be provided. Returns the
     updated job summary.
     """
     try:
         db = _get_db()
-        return {"job": update_job_status_in_db(db, job_id, archived, user_status)}
+        return {"job": update_job_status_in_db(db, job_id, state, user_status)}
     except InvalidId:
         return {"error": "invalid job_id"}
     except Exception as exc:

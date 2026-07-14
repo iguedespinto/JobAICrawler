@@ -8,10 +8,17 @@ JSON import flow.
 
 1. Create and activate a virtual environment.
 2. Install dependencies:
-   - `pip install -r requirements.txt`
+   - App only: `pip install -r requirements.txt`
+   - App + tests + MCP server (for development): `pip install -r requirements-dev.txt`
 3. Export required env vars (see below).
 4. Run the app:
    - `flask --app wsgi run`
+5. Run the tests:
+   - `pytest`
+
+`requirements.txt` holds only the runtime dependencies the Heroku build needs;
+test tooling lives in `requirements-dev.txt` so it stays out of the deployed
+slug.
 
 ### Importing opportunities
 

@@ -93,11 +93,11 @@ def test_jobs_list_search_escapes_special_characters(app_client, monkeypatch):
     assert "Python Engineer" not in body
 
 
-def test_jobs_list_excludes_archived_by_default(app_client, monkeypatch):
+def test_jobs_list_shows_all_states_and_filters(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[
-            {"_id": ObjectId(), "title": "Active Role", "company": "Acme"},
-            {"_id": ObjectId(), "title": "Old Role", "company": "Acme", "archived": True},
+            {"_id": ObjectId(), "title": "Open Role", "company": "Acme", "state": "open"},
+            {"_id": ObjectId(), "title": "Closed Role", "company": "Acme", "state": "closed"},
         ],
         profiles=[],
     )
@@ -106,19 +106,22 @@ def test_jobs_list_excludes_archived_by_default(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    active = app_client.get("/jobs").data.decode("utf-8")
-    assert "Active Role" in active
-    assert "Old Role" not in active
+    # Default: all states shown.
+    everything = app_client.get("/jobs").data.decode("utf-8")
+    assert "Open Role" in everything and "Closed Role" in everything
 
-    archived = app_client.get("/jobs?archived=1").data.decode("utf-8")
-    assert "Old Role" in archived
-    assert "Active Role" not in archived
+    # Narrow by state.
+    open_only = app_client.get("/jobs?state=open").data.decode("utf-8")
+    assert "Open Role" in open_only and "Closed Role" not in open_only
+
+    closed_only = app_client.get("/jobs?state=closed").data.decode("utf-8")
+    assert "Closed Role" in closed_only and "Open Role" not in closed_only
 
 
-def test_archive_job_route(app_client, monkeypatch):
+def test_set_job_state_route(app_client, monkeypatch):
     job_id = ObjectId()
     fake_db = FakeDB(
-        jobs=[{"_id": job_id, "title": "Role", "company": "Acme"}],
+        jobs=[{"_id": job_id, "title": "Role", "company": "Acme", "state": "open"}],
         profiles=[],
     )
 
@@ -126,12 +129,12 @@ def test_archive_job_route(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    response = app_client.post(f"/jobs/{job_id}/archive", data={"archived": "1"})
+    response = app_client.post(f"/jobs/{job_id}/state", data={"state": "closed"})
     assert response.status_code == 302
-    assert fake_db.jobs.find_one({"_id": job_id})["archived"] is True
+    assert fake_db.jobs.find_one({"_id": job_id})["state"] == "closed"
 
-    response = app_client.post(f"/jobs/{job_id}/archive", data={"archived": "0"})
-    assert fake_db.jobs.find_one({"_id": job_id})["archived"] is False
+    response = app_client.post(f"/jobs/{job_id}/state", data={"state": "open"})
+    assert fake_db.jobs.find_one({"_id": job_id})["state"] == "open"
 
 
 def test_job_detail_route(app_client, monkeypatch):
@@ -162,3 +165,62 @@ def test_job_detail_route(app_client, monkeypatch):
     assert "Backend Engineer" in body
     assert "Role details" in body
     assert "Python" in body
+
+
+def test_edit_job_route_updates_fields(app_client, monkeypatch):
+    job_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[
+            {
+                "_id": job_id,
+                "title": "Backend Engineer",
+                "company": "Acme",
+                "location": "Remote",
+                "salary": "€90,000",
+                "keywords": ["Python", "Flask"],
+                "description_text": "Old details",
+                "url": "https://example.com/jobs/1",
+                "state": "closed",  # editing must work for closed jobs too
+            }
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    response = app_client.post(
+        f"/jobs/{job_id}/edit",
+        data={
+            "title": "Senior Backend Engineer",
+            "company": "Globex",
+            "location": "Dublin",
+            "url": "https://example.com/jobs/2",
+            "salary": "€120,000",
+            "keywords": "Python, Django , AWS",
+            "description_html": (
+                "<p>New <b>bold</b> details</p>"
+                "<ul><li>first</li><li>second</li></ul>"
+                "<script>alert('xss')</script>"
+            ),
+        },
+    )
+    assert response.status_code == 302
+
+    job = fake_db.jobs.find_one({"_id": job_id})
+    assert job["title"] == "Senior Backend Engineer"
+    assert job["company"] == "Globex"
+    assert job["location"] == "Dublin"
+    assert job["url"] == "https://example.com/jobs/2"
+    assert job["salary"] == "€120,000"
+    assert job["keywords"] == ["Python", "Django", "AWS"]
+    # Rich text: formatting kept, script stripped.
+    assert "<b>bold</b>" in job["description_html"]
+    assert "<li>first</li>" in job["description_html"]
+    assert "script" not in job["description_html"].lower()
+    # Plain-text copy has no tags but keeps the words (for search / matching).
+    assert "<" not in job["description_text"]
+    assert "bold" in job["description_text"] and "second" in job["description_text"]
+    # Editing does not change the state.
+    assert job["state"] == "closed"

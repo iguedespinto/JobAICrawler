@@ -71,12 +71,13 @@ def aggregate_keywords(
     db,
     must: Optional[List[str]] = None,
     cannot: Optional[List[str]] = None,
-    include_archived: bool = False,
+    state: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], int]:
     """Count opportunities per keyword (case-insensitive grouping).
 
-    By default only active (non-archived) opportunities are counted; pass
-    ``include_archived=True`` to count all of them.
+    By default all opportunities are counted (open and closed), since closed
+    ones are kept for keyword/statistics analysis. Pass ``state="open"`` or
+    ``state="closed"`` to narrow to one state.
 
     Keyword groups (from the ``keyword_groups`` collection) are respected:
     variants that belong to the same group are counted under the group's
@@ -95,7 +96,12 @@ def aggregate_keywords(
     spellings: Dict[str, Counter] = {}
     total_jobs = 0
 
-    job_filter: Dict[str, Any] = {} if include_archived else {"archived": {"$ne": True}}
+    if state == "open":
+        job_filter: Dict[str, Any] = {"state": {"$ne": "closed"}}
+    elif state == "closed":
+        job_filter = {"state": "closed"}
+    else:
+        job_filter = {}
     for job in db.jobs.find(job_filter):
         if not _job_passes(job, must, cannot):
             continue
@@ -168,12 +174,13 @@ def view_dashboard():
 
     must_raw = request.args.get("must", "").strip()
     cannot_raw = request.args.get("cannot", "").strip()
-    include_archived = request.args.get("scope") == "all"
+    state = request.args.get("state", "").strip().lower()
+    state = state if state in {"open", "closed"} else "all"
     rows, total_jobs = aggregate_keywords(
         db,
         must=split_terms(must_raw),
         cannot=split_terms(cannot_raw),
-        include_archived=include_archived,
+        state=None if state == "all" else state,
     )
     cloud = _cloud_items(rows)
 
@@ -184,5 +191,5 @@ def view_dashboard():
         total_jobs=total_jobs,
         must=must_raw,
         cannot=cannot_raw,
-        scope="all" if include_archived else "active",
+        state=state,
     )

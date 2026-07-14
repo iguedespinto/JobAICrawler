@@ -151,7 +151,9 @@ def test_similar_description_marks_match_above_threshold():
     assert rows[0]["match_label"] == "Backend Engineer @ Acme"
 
 
-def test_archived_jobs_are_excluded_from_matching():
+def test_matching_considers_every_job_regardless_of_state():
+    # There is no longer an "archived" exclusion: every job (open or closed) is
+    # a match candidate, so an identical closed job is still matched by URL.
     fake_db = FakeDB(
         jobs=[
             {
@@ -159,13 +161,12 @@ def test_archived_jobs_are_excluded_from_matching():
                 "company": "Acme",
                 "url": "https://example.com/jobs/acme-1",
                 "description_text": _DESCRIPTION,
-                "archived": True,
+                "state": "closed",
             }
         ],
         profiles=[],
     )
 
-    # Identical URL and description, but the only DB job is archived.
     jobs = [
         {
             "title": "Backend Engineer",
@@ -177,8 +178,8 @@ def test_archived_jobs_are_excluded_from_matching():
 
     rows = routes_import.match_jobs(jobs, fake_db)
 
-    assert rows[0]["status"] == "new"
-    assert rows[0]["similarity"] == 0
+    assert rows[0]["status"] == "matched"
+    assert rows[0]["reason"] == "url"
 
 
 def _upload(app_client, payload, filename="offers.json"):
@@ -327,18 +328,19 @@ def test_stage_urls_adds_dedupes_and_validates():
     assert _pending_count(fake_db) == 2  # the pre-existing one plus the new one
 
 
-def test_stage_urls_skips_url_of_archived_job_is_allowed():
-    # Answer to design Q2: only active jobs block a URL; archived ones do not.
+def test_stage_urls_skips_url_of_any_existing_job():
+    # Every job blocks a URL now (no archived exemption): a closed job's URL is
+    # already known, so queuing it again is skipped.
     fake_db = FakeDB(
         jobs=[{"title": "Old", "company": "Acme",
-               "url": "https://example.com/old", "archived": True}],
+               "url": "https://example.com/old", "state": "closed"}],
         profiles=[],
     )
 
     result = routes_import.stage_urls(fake_db, ["https://example.com/old"])
 
-    assert result == {"added": 1, "skipped": 0, "invalid": 0}
-    assert _pending_count(fake_db) == 1
+    assert result == {"added": 0, "skipped": 1, "invalid": 0}
+    assert _pending_count(fake_db) == 0
 
 
 def test_pending_urls_hidden_from_staging_view():
@@ -487,7 +489,7 @@ def test_commit_closed_match_closes_existing_without_new_record(app_client, monk
 
 
 def test_matching_spans_open_and_closed_existing_jobs():
-    # Closed jobs are not archived, so they stay match candidates: an incoming
+    # Matching never filters on state, so closed jobs stay candidates: an incoming
     # opportunity (open or closed) matches existing open AND closed jobs.
     fake_db = FakeDB(
         jobs=[

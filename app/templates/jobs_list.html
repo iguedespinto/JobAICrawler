@@ -26,14 +26,18 @@
       <a href="{{ url_for('keywords.manage_keywords') }}" style="margin-right: 1rem;">Keywords</a>
       <a href="{{ url_for('profile.get_profile') }}">Profile</a>
     </div>
-    <h1>{% if viewing_archived %}Archived opportunities{% else %}Opportunities{% endif %}</h1>
+    <h1>Opportunities</h1>
 
     <div style="margin-bottom: 1rem;">
-      {% if viewing_archived %}
-        <a href="{{ url_for('jobs.list_jobs') }}">← View active</a>
-      {% else %}
-        <a href="{{ url_for('jobs.list_jobs', archived=1) }}">View archived</a>
-      {% endif %}
+      Show:
+      {% for opt in ['all', 'open', 'closed'] %}
+        {% if state_filter == opt %}
+          <strong style="margin-right: 0.5rem;">{{ opt | capitalize }}</strong>
+        {% else %}
+          <a style="margin-right: 0.5rem;"
+             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword')) }}">{{ opt | capitalize }}</a>
+        {% endif %}
+      {% endfor %}
     </div>
 
     {% with messages = get_flashed_messages() %}
@@ -45,13 +49,13 @@
     {% endwith %}
 
     <form method="get" action="{{ url_for('jobs.list_jobs') }}">
-      {% if viewing_archived %}<input type="hidden" name="archived" value="1" />{% endif %}
+      {% if filters.get('state') %}<input type="hidden" name="state" value="{{ filters.get('state') }}" />{% endif %}
       {% if filters.get('keyword') %}<input type="hidden" name="keyword" value="{{ filters.get('keyword') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
              placeholder="Search title, keywords, description" style="width: 320px;" />
       <button type="submit">Search</button>
       {% if filters.get('q') %}
-        <a href="{{ url_for('jobs.list_jobs', archived=filters.get('archived'), keyword=filters.get('keyword')) }}"
+        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword')) }}"
            style="margin-left: 0.5rem;">Clear</a>
       {% endif %}
     </form>
@@ -59,7 +63,7 @@
     {% if filters.get('keyword') %}
       <p style="margin-top: 0.75rem;">
         Showing opportunities with keyword <strong>{{ filters.get('keyword') }}</strong>.
-        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), archived=filters.get('archived')) }}">Clear keyword</a>
+        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state')) }}">Clear keyword</a>
       </p>
     {% endif %}
 
@@ -81,9 +85,6 @@
           {% endif %}
           {% if job.user_status %}
             <div class="meta">Status: {{ job.user_status }}</div>
-          {% endif %}
-          {% if job.archived %}
-            <div class="meta"><strong>Archived</strong></div>
           {% endif %}
         </div>
       {% endfor %}
