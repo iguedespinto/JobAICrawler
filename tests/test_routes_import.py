@@ -328,6 +328,34 @@ def test_stage_urls_adds_dedupes_and_validates():
     assert _pending_count(fake_db) == 2  # the pre-existing one plus the new one
 
 
+def test_strip_tracking_params():
+    s = routes_import._strip_tracking_params
+    # All-tracking query + fragment -> clean base URL.
+    assert s(
+        "https://app.welcometothejungle.com/jobs/cPEm4jDG"
+        "?position=3&count=3&utm_campaign=x&utm_medium=email&utm_source=email#top"
+    ) == "https://app.welcometothejungle.com/jobs/cPEm4jDG"
+    # Identifying params (Indeed's jk) are kept; only trackers dropped.
+    assert s("https://ie.indeed.com/viewjob?jk=abc123&utm_source=email&from=alert") \
+        == "https://ie.indeed.com/viewjob?jk=abc123&from=alert"
+    # Non-URLs pass through untouched.
+    assert s("not a url") == "not a url"
+
+
+def test_stage_urls_strips_tracking_and_dedupes():
+    fake_db = FakeDB(jobs=[], profiles=[])
+    result = routes_import.stage_urls(
+        fake_db,
+        [
+            "https://x.com/jobs/42?utm_source=email&position=1",
+            "https://x.com/jobs/42?utm_campaign=other#apply",  # same posting, other tracking
+        ],
+    )
+    assert result == {"added": 1, "skipped": 1, "invalid": 0}
+    doc = fake_db.import_staging.find_one({"status": _UNPROCESSED})
+    assert doc["url"] == "https://x.com/jobs/42"  # stored clean
+
+
 def test_stage_urls_skips_url_of_any_existing_job():
     # Every job blocks a URL now (no archived exemption): a closed job's URL is
     # already known, so queuing it again is skipped.

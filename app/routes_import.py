@@ -24,7 +24,7 @@ import re
 from collections import Counter
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlsplit, urlunsplit
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -143,6 +143,41 @@ def _is_valid_url(value: Any) -> bool:
         return False
     parsed = urlparse(text)
     return parsed.scheme in ("http", "https") and bool(parsed.netloc)
+
+
+# Marketing/tracking query parameters to drop when queueing a URL. ``utm_*`` is
+# matched by prefix. Params that identify the posting (e.g. Indeed's ``jk``) are
+# deliberately NOT listed, so those URLs keep working.
+_TRACKING_PARAM_NAMES = {
+    "position", "count", "ref", "referrer", "source", "src", "medium",
+    "campaign", "gclid", "fbclid", "msclkid", "dclid", "gclsrc", "gbraid",
+    "wbraid", "yclid", "mc_cid", "mc_eid", "igshid", "igsh", "spm",
+    "_hsenc", "_hsmi", "__hstc", "__hssc", "__hsfp", "vero_id", "vero_conv",
+    "trk", "trackingid", "refid", "ns_campaign", "ns_mchannel", "ns_source",
+    "wt.mc_id",
+}
+
+
+def _strip_tracking_params(value: Any) -> str:
+    """Return the URL with tracking params and the fragment removed.
+
+    Drops ``utm_*`` and other known marketing/tracking parameters plus the
+    ``#fragment``; keeps any remaining (identifying) query parameters. Leaves a
+    value untouched if it is not a full http(s) URL.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return text
+    parts = urlsplit(text)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        return text
+    kept = [
+        (key, val)
+        for key, val in parse_qsl(parts.query, keep_blank_values=True)
+        if key.lower() not in _TRACKING_PARAM_NAMES
+        and not key.lower().startswith("utm_")
+    ]
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
 
 
 def _description_vector(text: Any) -> Tuple[Counter, float]:
@@ -488,7 +523,9 @@ def stage_urls(db, urls: List[str], source: Optional[str] = None) -> Dict[str, i
     added = skipped = invalid = 0
 
     for raw in urls:
-        text = str(raw or "").strip()
+        # Strip tracking params / fragments so the queued URL is clean and the
+        # same posting from different links dedupes to one entry.
+        text = _strip_tracking_params(raw)
         if not _is_valid_url(text):
             invalid += 1
             continue

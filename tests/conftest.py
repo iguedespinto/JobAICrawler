@@ -179,12 +179,14 @@ class FakeDB:
         import_staging: Optional[List[Dict[str, Any]]] = None,
         keyword_groups: Optional[List[Dict[str, Any]]] = None,
         targets: Optional[List[Dict[str, Any]]] = None,
+        target_suggestions: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         self.jobs = FakeCollection(jobs)
         self.profiles = FakeCollection(profiles)
         self.import_staging = FakeCollection(import_staging)
         self.keyword_groups = FakeCollection(keyword_groups)
         self.targets = FakeCollection(targets)
+        self.target_suggestions = FakeCollection(target_suggestions)
 
 
 class FakeClient:
