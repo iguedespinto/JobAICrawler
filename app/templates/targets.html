@@ -10,16 +10,56 @@
       .cols { display: flex; flex-wrap: wrap; gap: 2rem; }
       .col { flex: 1; min-width: 280px; }
       ul.targets { list-style: none; padding: 0; margin: 0.5rem 0; max-width: 420px; }
-      ul.targets li { display: flex; justify-content: space-between; align-items: center;
+      ul.targets li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
                       border: 1px solid #ddd; padding: 0.4rem 0.6rem; margin-bottom: 0.3rem; }
-      .btn-delete { background: #e74c3c; color: #fff; border: none; padding: 0.25rem 0.6rem;
-                    border-radius: 3px; cursor: pointer; font-size: 0.8rem; }
+      .btn-delete { background: #e74c3c; color: #fff; border: none; }
       .btn-delete:hover { background: #c0392b; }
+      .target-name { cursor: pointer; }
+      .target-name:hover { text-decoration: underline; }
+      .target-actions { display: flex; gap: 0.3rem; align-items: center; }
+      .icon { width: 15px; height: 15px; display: block; }
+      .icon-btn { display: inline-flex; align-items: center; justify-content: center;
+                  padding: 0.3rem 0.4rem; border-radius: 3px; cursor: pointer; line-height: 0; }
+      /* Inline edit: the edit form is hidden until the row is toggled. */
+      ul.targets li .target-edit { display: none; }
+      ul.targets li.editing .target-name,
+      ul.targets li.editing .target-actions { display: none; }
+      ul.targets li.editing .target-edit { display: flex; gap: 0.3rem; align-items: center; flex: 1; }
+      .target-input { flex: 1; padding: 0.3rem; font: inherit; }
       .add-form input[type="text"] { padding: 0.4rem; width: 60%; }
       .empty { color: #999; font-style: italic; }
+      .suggestions-section { margin-top: 2.5rem; }
+      table.suggestions { border-collapse: collapse; max-width: 640px; margin-top: 0.5rem; }
+      table.suggestions th, table.suggestions td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; }
+      table.suggestions th { background: #f2f2f2; }
+      .suggestion-actions { display: flex; gap: 0.3rem; }
     </style>
   </head>
   <body>
+    <!-- Icon sprite: monochrome glyphs inherit each button's colour. -->
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+      <symbol id="ic-edit" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M11.5 2.2l2.3 2.3L6 12.3l-3 .7.7-3z" />
+      </symbol>
+      <symbol id="ic-trash" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.5 4h11M6 4V2.5h4V4M4.2 4l.6 9.5h6.4l.6-9.5M6.5 6.5v5M9.5 6.5v5" />
+      </symbol>
+      <symbol id="ic-check" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 8.5l3.5 3.5L13 4" />
+      </symbol>
+      <symbol id="ic-cross" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 4l8 8M12 4l-8 8" />
+      </symbol>
+      <symbol id="ic-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 3v10M3 8h10" />
+      </symbol>
+    </svg>
+
     <div class="nav">
       <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
       <a href="{{ url_for('dashboard.view_dashboard') }}">Dashboard</a>
@@ -49,12 +89,32 @@
             <ul class="targets">
               {% for item in section.entries %}
                 <li>
-                  <span>{{ item.name }}</span>
-                  <form method="post" action="{{ url_for('targets.delete_target_route') }}"
-                        onsubmit="return confirm('Remove &quot;{{ item.name }}&quot;?');">
+                  <span class="target-name">{{ item.name }}</span>
+                  <form class="target-edit" method="post"
+                        action="{{ url_for('targets.edit_target_route') }}">
                     <input type="hidden" name="id" value="{{ item.id }}" />
-                    <button type="submit" class="btn-delete">Remove</button>
+                    <input type="text" name="name" value="{{ item.name }}" class="target-input"
+                           autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" />
+                    <button type="submit" class="icon-btn btn-save" title="Save" aria-label="Save">
+                      <svg class="icon"><use href="#ic-check" /></svg>
+                    </button>
+                    <button type="button" class="icon-btn btn-cancel" title="Cancel" aria-label="Cancel">
+                      <svg class="icon"><use href="#ic-cross" /></svg>
+                    </button>
                   </form>
+                  <span class="target-actions">
+                    <button type="button" class="icon-btn btn-edit" title="Edit" aria-label="Edit">
+                      <svg class="icon"><use href="#ic-edit" /></svg>
+                    </button>
+                    <form method="post" action="{{ url_for('targets.delete_target_route') }}"
+                          style="display: inline;"
+                          onsubmit="return confirm('Remove &quot;{{ item.name }}&quot;?');">
+                      <input type="hidden" name="id" value="{{ item.id }}" />
+                      <button type="submit" class="icon-btn btn-delete" title="Remove" aria-label="Remove">
+                        <svg class="icon"><use href="#ic-trash" /></svg>
+                      </button>
+                    </form>
+                  </span>
                 </li>
               {% endfor %}
             </ul>
@@ -64,11 +124,73 @@
 
           <form method="post" action="{{ url_for('targets.add_target_route') }}" class="add-form">
             <input type="hidden" name="kind" value="{{ section.kind }}" />
-            <input type="text" name="name" placeholder="Add a {{ section.kind | replace('_', ' ') }}…" />
+            <input type="text" name="name" placeholder="Add a {{ section.kind | replace('_', ' ') }}…"
+                   autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" />
             <button type="submit">Add</button>
           </form>
         </div>
       {% endfor %}
     </div>
+
+    <div class="suggestions-section">
+      <h2>Suggestions</h2>
+      <p>New targets suggested by the MCP client. Add the ones you want to the
+         matching list, or discard them.</p>
+      {% if suggestions %}
+        <table class="suggestions">
+          <thead>
+            <tr><th>Name</th><th>Type</th><th></th></tr>
+          </thead>
+          <tbody>
+            {% for s in suggestions %}
+              <tr>
+                <td>{{ s.name }}</td>
+                <td>{{ s.type_label }}</td>
+                <td class="suggestion-actions">
+                  <form method="post" action="{{ url_for('targets.accept_suggestion_route') }}">
+                    <input type="hidden" name="id" value="{{ s.id }}" />
+                    <button type="submit" class="icon-btn btn-add"
+                            title="Add to {{ s.type_label }}" aria-label="Add to targets">
+                      <svg class="icon"><use href="#ic-plus" /></svg>
+                    </button>
+                  </form>
+                  <form method="post" action="{{ url_for('targets.discard_suggestion_route') }}">
+                    <input type="hidden" name="id" value="{{ s.id }}" />
+                    <button type="submit" class="icon-btn btn-delete"
+                            title="Discard" aria-label="Discard suggestion">
+                      <svg class="icon"><use href="#ic-trash" /></svg>
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="empty">No suggestions right now.</p>
+      {% endif %}
+    </div>
+
+    <script>
+      // Inline edit: toggle a row into an editable input; Save submits, Cancel
+      // reverts. Delegated so it covers every row in every section.
+      document.addEventListener("click", function (e) {
+        // Use closest() so a click on the icon (svg/use) inside a button still
+        // resolves to the button. Clicking the entry name also enters edit mode.
+        var editTrigger = e.target.closest(".btn-edit, .target-name");
+        var cancelBtn = e.target.closest(".btn-cancel");
+        if (editTrigger) {
+          var li = editTrigger.closest("li");
+          li.classList.add("editing");
+          var input = li.querySelector(".target-input");
+          input.focus();
+          input.select();
+        } else if (cancelBtn) {
+          var row = cancelBtn.closest("li");
+          row.querySelector(".target-edit").reset();  // discard unsaved change
+          row.classList.remove("editing");
+        }
+      });
+    </script>
   </body>
 </html>

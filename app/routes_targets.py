@@ -122,6 +122,120 @@ def remove_target(db, target_id: str) -> bool:
     return db.targets.delete_one({"_id": oid}).deleted_count > 0
 
 
+def rename_target(db, target_id: str, name: Any) -> Dict[str, Any]:
+    """Rename a target, skipping if another of the same kind already has the name.
+
+    Returns ``{"found", "renamed", "duplicate", "kind", "name"}``. Raises
+    ValueError on an empty name and InvalidId on a malformed id.
+    """
+    oid = ObjectId(target_id)  # raises InvalidId for malformed ids
+    name_n = _normalize_name(name)
+    if not name_n:
+        raise ValueError("name must not be empty")
+
+    doc = db.targets.find_one({"_id": oid})
+    if doc is None:
+        return {"found": False, "renamed": False, "duplicate": False}
+
+    kind = doc.get("kind")
+    clash = db.targets.find_one(
+        {
+            "kind": kind,
+            "name": {"$regex": f"^{re.escape(name_n)}$", "$options": "i"},
+            "_id": {"$ne": oid},
+        }
+    )
+    if clash is not None:
+        return {"found": True, "renamed": False, "duplicate": True,
+                "kind": kind, "name": doc.get("name")}
+
+    db.targets.update_one({"_id": oid}, {"$set": {"name": name_n}})
+    return {"found": True, "renamed": True, "duplicate": False,
+            "kind": kind, "name": name_n}
+
+
+# ── Suggestions (populated by the MCP client, reviewed on the page) ──
+
+
+def list_suggestions(db) -> List[Dict[str, Any]]:
+    """List pending target suggestions, sorted by type then name."""
+    out: List[Dict[str, Any]] = []
+    for doc in db.target_suggestions.find({}).sort([("kind", 1), ("name", 1)]):
+        kind = doc.get("kind")
+        if kind in TARGET_KINDS:
+            out.append(
+                {
+                    "id": str(doc["_id"]),
+                    "name": doc.get("name"),
+                    "kind": kind,
+                    "type_label": TARGET_KINDS[kind][1],
+                }
+            )
+    return out
+
+
+def add_suggestions(db, items: Any) -> Dict[str, int]:
+    """Add suggested targets for review, skipping ones already targeted/suggested.
+
+    ``items`` is an iterable of mappings with ``kind`` and ``name``. Returns
+    ``{"added", "skipped", "invalid"}``.
+    """
+    added = skipped = invalid = 0
+    seen: set = set()
+    now = _utcnow()
+    to_insert: List[Dict[str, Any]] = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            invalid += 1
+            continue
+        kind = _normalize_kind(item.get("kind"))
+        name = _normalize_name(item.get("name"))
+        if not kind or not name:
+            invalid += 1
+            continue
+        key = (kind, name.lower())
+        if key in seen:
+            skipped += 1
+            continue
+        name_rx = {"$regex": f"^{re.escape(name)}$", "$options": "i"}
+        if db.targets.find_one({"kind": kind, "name": name_rx}) is not None:
+            skipped += 1  # already a target
+            continue
+        if db.target_suggestions.find_one({"kind": kind, "name": name_rx}) is not None:
+            skipped += 1  # already suggested
+            continue
+        seen.add(key)
+        to_insert.append({"kind": kind, "name": name, "created_at": now})
+        added += 1
+    if to_insert:
+        db.target_suggestions.insert_many(to_insert)
+    return {"added": added, "skipped": skipped, "invalid": invalid}
+
+
+def accept_suggestion(db, suggestion_id: str) -> Dict[str, Any]:
+    """Promote a suggestion into its target list and drop it from suggestions.
+
+    Raises InvalidId for a malformed id.
+    """
+    oid = ObjectId(suggestion_id)  # raises InvalidId for malformed ids
+    doc = db.target_suggestions.find_one({"_id": oid})
+    if doc is None:
+        return {"found": False}
+    result = add_target(db, doc.get("kind"), doc.get("name"))
+    db.target_suggestions.delete_one({"_id": oid})
+    return {"found": True, "kind": result["kind"],
+            "name": result["name"], "added": result["added"]}
+
+
+def discard_suggestion(db, suggestion_id: str) -> bool:
+    """Remove a suggestion without adding it. Returns True if one was removed.
+
+    Raises InvalidId for a malformed id.
+    """
+    oid = ObjectId(suggestion_id)  # raises InvalidId for malformed ids
+    return db.target_suggestions.delete_one({"_id": oid}).deleted_count > 0
+
+
 # ── HTML page ───────────────────────────────────────────────────────
 
 
@@ -137,7 +251,9 @@ def manage_targets():
         {"kind": kind, "title": title, "entries": targets[key]}
         for kind, (key, title) in TARGET_KINDS.items()
     ]
-    return render_template("targets.html", sections=sections)
+    return render_template(
+        "targets.html", sections=sections, suggestions=list_suggestions(db)
+    )
 
 
 @targets_bp.route("/add", methods=["POST"])
@@ -175,4 +291,70 @@ def delete_target_route():
         return redirect(url_for("targets.manage_targets"))
 
     flash("Removed target." if removed else "Target not found.")
+    return redirect(url_for("targets.manage_targets"))
+
+
+@targets_bp.route("/edit", methods=["POST"])
+def edit_target_route():
+    """Rename a target inline from the management page."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    try:
+        result = rename_target(db, request.form.get("id", ""), request.form.get("name"))
+    except InvalidId:
+        flash("Invalid target id.")
+        return redirect(url_for("targets.manage_targets"))
+    except ValueError as exc:
+        flash(str(exc))
+        return redirect(url_for("targets.manage_targets"))
+
+    if not result["found"]:
+        flash("Target not found.")
+    elif result["duplicate"]:
+        flash(f"A {result['kind'].replace('_', ' ')} with that name already exists.")
+    else:
+        flash(f"Renamed target to {result['name']}.")
+    return redirect(url_for("targets.manage_targets"))
+
+
+@targets_bp.route("/suggestions/accept", methods=["POST"])
+def accept_suggestion_route():
+    """Promote a suggestion into its target list."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    try:
+        result = accept_suggestion(db, request.form.get("id", ""))
+    except InvalidId:
+        flash("Invalid suggestion id.")
+        return redirect(url_for("targets.manage_targets"))
+
+    if not result["found"]:
+        flash("Suggestion not found.")
+    else:
+        label = result["kind"].replace("_", " ")
+        if result["added"]:
+            flash(f"Added {label}: {result['name']}.")
+        else:
+            flash(f"{result['name']} was already a target {label}.")
+    return redirect(url_for("targets.manage_targets"))
+
+
+@targets_bp.route("/suggestions/discard", methods=["POST"])
+def discard_suggestion_route():
+    """Dismiss a suggestion without adding it."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    try:
+        removed = discard_suggestion(db, request.form.get("id", ""))
+    except InvalidId:
+        flash("Invalid suggestion id.")
+        return redirect(url_for("targets.manage_targets"))
+
+    flash("Discarded suggestion." if removed else "Suggestion not found.")
     return redirect(url_for("targets.manage_targets"))

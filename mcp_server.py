@@ -10,7 +10,8 @@ Exposes tools that a Claude Code routine (or the desktop app) can call to:
 - Retrieve job offers from the database (``find_jobs``) and change their
   state (``update_job_status`` — open/closed, set saved/applied).
 - Read and manage the target companies and roles to focus searches on
-  (``list_targets`` / ``add_target`` / ``remove_target``).
+  (``list_targets`` / ``add_target`` / ``rename_target`` / ``remove_target``).
+- Suggest new targets for the user to review (``suggest_targets``).
 
 Run directly for stdio transport (how Claude Code launches it):
 
@@ -457,6 +458,21 @@ def add_target(kind: str, name: str) -> Dict[str, Any]:
 
 
 @mcp.tool()
+def rename_target(target_id: str, name: str) -> Dict[str, Any]:
+    """Rename a target by its id (from list_targets).
+
+    Skips the rename if another target of the same kind already has that name.
+    """
+    try:
+        db = _get_db()
+        return {"target": routes_targets.rename_target(db, target_id, name)}
+    except InvalidId:
+        return {"error": "invalid target_id"}
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+@mcp.tool()
 def remove_target(target_id: str) -> Dict[str, Any]:
     """Remove a target company or role by its id (from list_targets)."""
     try:
@@ -464,6 +480,27 @@ def remove_target(target_id: str) -> Dict[str, Any]:
         return {"removed": routes_targets.remove_target(db, target_id)}
     except InvalidId:
         return {"error": "invalid target_id"}
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+
+
+@mcp.tool()
+def suggest_targets(suggestions: List[Dict[str, str]]) -> Dict[str, Any]:
+    """Suggest new targets for the user to review on the Targets page.
+
+    Use this to propose companies, roles, search sites or factors similar to the
+    ones already targeted. The user then adds or discards each on the page.
+
+    Args:
+        suggestions: list of {"kind": ..., "name": ...} where kind is 'company',
+            'role', 'search_site' or 'factor'. Suggestions duplicating an
+            existing target or suggestion are skipped.
+
+    Returns {"added", "skipped", "invalid"}.
+    """
+    try:
+        db = _get_db()
+        return routes_targets.add_suggestions(db, suggestions)
     except Exception as exc:
         return {"error": f"{type(exc).__name__}: {exc}"}
 
