@@ -328,16 +328,19 @@ def test_stage_urls_adds_dedupes_and_validates():
     assert _pending_count(fake_db) == 2  # the pre-existing one plus the new one
 
 
-def test_strip_tracking_params():
-    s = routes_import._strip_tracking_params
-    # All-tracking query + fragment -> clean base URL.
+def test_strip_url_params():
+    s = routes_import._strip_url_params
+    # All query params + fragment dropped -> clean base URL.
     assert s(
         "https://app.welcometothejungle.com/jobs/cPEm4jDG"
         "?position=3&count=3&utm_campaign=x&utm_medium=email&utm_source=email#top"
     ) == "https://app.welcometothejungle.com/jobs/cPEm4jDG"
-    # Identifying params (Indeed's jk) are kept; only trackers dropped.
+    # LinkedIn navigation param is dropped (id is in the path).
+    assert s("https://www.linkedin.com/jobs/view/4372131673/?alternateChannel=search") \
+        == "https://www.linkedin.com/jobs/view/4372131673/"
+    # Identifying params (Indeed's jk) are kept; everything else dropped.
     assert s("https://ie.indeed.com/viewjob?jk=abc123&utm_source=email&from=alert") \
-        == "https://ie.indeed.com/viewjob?jk=abc123&from=alert"
+        == "https://ie.indeed.com/viewjob?jk=abc123"
     # Non-URLs pass through untouched.
     assert s("not a url") == "not a url"
 
