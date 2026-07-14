@@ -1,0 +1,8 @@
+# Development / CI dependencies. Install with:
+#   pip install -r requirements-dev.txt
+# Pulls in the runtime deps and the local MCP server deps, then adds the test
+# tooling. NOT used by the Heroku build (that uses requirements.txt only).
+-r requirements.txt
+-r requirements-mcp.txt
+pytest>=7.4
+pytest-mock>=3.11

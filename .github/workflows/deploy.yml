@@ -1,13 +1,30 @@
-name: Deploy to Heroku
+name: CI / Deploy to Heroku
 
-# Deploys to Heroku on every push to main (e.g. when a PR is merged).
+# Run tests on every push and PR. Deploy to Heroku only when main passes.
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch: {}
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run tests
+        run: pytest -q
+
   deploy:
+    needs: test
+    # Only deploy on a push to main (not on PRs).
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
