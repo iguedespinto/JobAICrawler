@@ -2,6 +2,12 @@
    on its own for ?partial=1 so the scroll script can append the next page. Keep
    this to the cards themselves: anything here is repeated on every batch. #}
 {% for job in jobs %}
+  {# In grouped mode the server marks the first card of each company, having
+     seen the card before this page too — so a company split across batches is
+     announced once, not again each time the scroll appends more of it. #}
+  {% if job.start_group %}
+    <h2 class="group-head">{{ job.group_label }} <span class="group-count">({{ job.group_count }})</span></h2>
+  {% endif %}
   <div class="job">
     <h3>
       <a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a>
@@ -9,9 +15,10 @@
     </h3>
     <div class="meta">
       {% if job.company %}
-        {# Keeps the current state and status scope, so filtering by company
-           does not quietly surface roles those filters had excluded. #}
-        <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state'), user_status=filters.get('user_status')) }}">{{ job.company }}</a>
+        {# Keeps the current state, status and grouping scope, so filtering by
+           company neither surfaces roles those filters had excluded nor drops
+           you back into a flat list without saying so. #}
+        <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ job.company }}</a>
       {% endif %}
       {% if job.location %} · {{ job.location }}{% endif %}
     </div>
