@@ -113,6 +113,29 @@ def test_update_job_status_validates():
         mcp_server.update_job_status_in_db(db, str(ObjectId()), state="closed")  # not found
 
 
+def test_update_job_status_accepts_radar():
+    db = _jobs_db()
+    job = db.jobs.find_one({"title": "Backend Engineer"})
+
+    updated = mcp_server.update_job_status_in_db(db, str(job["_id"]), user_status="radar")
+    assert updated["user_status"] == "radar"
+
+
+def test_find_jobs_user_status_filter():
+    db = _jobs_db()
+    backend = db.jobs.find_one({"title": "Backend Engineer"})
+    mcp_server.update_job_status_in_db(db, str(backend["_id"]), user_status="radar")
+    frontend = db.jobs.find_one({"title": "Frontend Engineer"})
+    mcp_server.update_job_status_in_db(db, str(frontend["_id"]), user_status="applied")
+
+    on_radar = mcp_server.find_jobs_in_db(db, user_status="radar")
+    assert {j["title"] for j in on_radar} == {"Backend Engineer"}
+
+    # Combines with the other filters rather than replacing them.
+    assert mcp_server.find_jobs_in_db(db, user_status="radar", state="closed") == []
+    assert mcp_server.count_jobs_in_db(db, user_status="applied") == 1
+
+
 def test_find_jobs_pagination_covers_all_without_overlap():
     jobs = [
         {"_id": ObjectId(), "title": f"Job {i}", "company": "Acme", "keywords": ["Python"]}

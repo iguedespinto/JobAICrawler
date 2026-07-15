@@ -36,7 +36,27 @@
           <strong style="margin-right: 0.5rem;">{{ opt | capitalize }}</strong>
         {% else %}
           <a style="margin-right: 0.5rem;"
-             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">{{ opt | capitalize }}</a>
+             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">{{ opt | capitalize }}</a>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {# The two filter rows narrow together: state is about the posting, status is
+       about the user's own mark on it. #}
+    <div style="margin-bottom: 1rem;">
+      Status:
+      {% if user_status_filter == 'all' %}
+        <strong style="margin-right: 0.5rem;">All</strong>
+      {% else %}
+        <a style="margin-right: 0.5rem;"
+           href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">All</a>
+      {% endif %}
+      {% for opt in user_statuses %}
+        {% if user_status_filter == opt %}
+          <strong style="margin-right: 0.5rem;">{{ user_status_labels[opt] }}</strong>
+        {% else %}
+          <a style="margin-right: 0.5rem;"
+             href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">{{ user_status_labels[opt] }}</a>
         {% endif %}
       {% endfor %}
     </div>
@@ -53,11 +73,12 @@
       {% if filters.get('state') %}<input type="hidden" name="state" value="{{ filters.get('state') }}" />{% endif %}
       {% if filters.get('keyword') %}<input type="hidden" name="keyword" value="{{ filters.get('keyword') }}" />{% endif %}
       {% if filters.get('company') %}<input type="hidden" name="company" value="{{ filters.get('company') }}" />{% endif %}
+      {% if filters.get('user_status') %}<input type="hidden" name="user_status" value="{{ filters.get('user_status') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
              placeholder="Search title, keywords, description" style="width: 320px;" />
       <button type="submit">Search</button>
       {% if filters.get('q') %}
-        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company')) }}"
+        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}"
            style="margin-left: 0.5rem;">Clear</a>
       {% endif %}
     </form>
@@ -65,14 +86,14 @@
     {% if filters.get('keyword') %}
       <p style="margin-top: 0.75rem;">
         Showing opportunities with keyword <strong>{{ filters.get('keyword') }}</strong>.
-        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state')) }}">Clear keyword</a>
+        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), user_status=filters.get('user_status')) }}">Clear keyword</a>
       </p>
     {% endif %}
 
     {% if filters.get('company') %}
       <p style="margin-top: 0.75rem;">
         Showing opportunities at <strong>{{ filters.get('company') }}</strong>.
-        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword')) }}">Clear company</a>
+        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword'), user_status=filters.get('user_status')) }}">Clear company</a>
       </p>
     {% endif %}
 
@@ -86,9 +107,9 @@
           </h3>
           <div class="meta">
             {% if job.company %}
-              {# Keeps the current state scope, so filtering by company does not
-                 quietly surface roles the state filter had excluded. #}
-              <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state')) }}">{{ job.company }}</a>
+              {# Keeps the current state and status scope, so filtering by company
+                 does not quietly surface roles those filters had excluded. #}
+              <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state'), user_status=filters.get('user_status')) }}">{{ job.company }}</a>
             {% endif %}
             {% if job.location %} · {{ job.location }}{% endif %}
           </div>
@@ -100,7 +121,7 @@
             <div class="meta">{{ job.keywords | join(', ') }}</div>
           {% endif %}
           {% if job.user_status %}
-            <div class="meta">Status: {{ job.user_status }}</div>
+            <div class="meta">Status: {{ user_status_labels.get(job.user_status, job.user_status) }}</div>
           {% endif %}
         </div>
       {% endfor %}

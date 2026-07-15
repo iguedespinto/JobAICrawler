@@ -31,6 +31,7 @@ from pymongo import MongoClient
 
 from app import routes_targets
 from app.routes_import import STATUS_UNPROCESSED, parse_jobs, stage_jobs
+from app.routes_jobs import USER_STATUSES
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -218,7 +219,9 @@ def find_pending_urls(page: int = 1, limit: int = 50) -> Dict[str, Any]:
 
 # ── Retrieve job offers & change their status ────────────────────────
 
-VALID_USER_STATUS = {"saved", "applied"}
+# Shared with the web app so the two agree on what the user can mark a job as.
+VALID_USER_STATUS = set(USER_STATUSES)
+_USER_STATUS_CHOICES = ", ".join(USER_STATUSES)
 
 
 def _job_summary(doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -242,6 +245,7 @@ def _build_job_filter(
     company: Optional[str],
     keyword: Optional[str],
     state: Optional[str],
+    user_status: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build the Mongo filter shared by find/count."""
     filt: Dict[str, Any] = {}
@@ -249,6 +253,10 @@ def _build_job_filter(
         filt["state"] = {"$ne": "closed"}
     elif state == "closed":
         filt["state"] = "closed"
+    # Mirrors the web list's filter. An unrecognised value is ignored rather
+    # than matched literally, so a typo returns everything, not nothing.
+    if user_status in VALID_USER_STATUS:
+        filt["user_status"] = user_status
     if company:
         filt["company"] = {"$regex": re.escape(company), "$options": "i"}
     if keyword:
@@ -269,10 +277,11 @@ def count_jobs_in_db(
     company: Optional[str] = None,
     keyword: Optional[str] = None,
     state: Optional[str] = None,
+    user_status: Optional[str] = None,
 ) -> int:
     """Count job offers matching the filters (for pagination)."""
     return db.jobs.count_documents(
-        _build_job_filter(query, company, keyword, state)
+        _build_job_filter(query, company, keyword, state, user_status)
     )
 
 
@@ -284,6 +293,7 @@ def find_jobs_in_db(
     state: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
+    user_status: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve one page of job offers from the database with optional filters.
 
@@ -291,10 +301,12 @@ def find_jobs_in_db(
     - ``company``: case-insensitive substring on company.
     - ``keyword``: exact (case-insensitive) match against the keywords array.
     - ``state``: 'open' or 'closed' to narrow by state (default: all).
+    - ``user_status``: 'radar', 'saved' or 'applied' to narrow by how the user
+      marked the job (default: all).
     - ``page``: 1-based page number.
     - ``limit``: page size (1-100), newest first.
     """
-    filt = _build_job_filter(query, company, keyword, state)
+    filt = _build_job_filter(query, company, keyword, state, user_status)
     limit = max(1, min(int(limit), 100))
     page = max(1, int(page))
     skip = (page - 1) * limit
@@ -318,9 +330,10 @@ def update_job_status_in_db(
 ) -> Dict[str, Any]:
     """Change a job's state (open/closed) and/or set user_status.
 
-    ``state`` accepts 'open' or 'closed'. ``user_status`` accepts 'saved',
-    'applied', or 'none'/'clear' (to unset). Raises ValueError / InvalidId on
-    bad input or missing job.
+    ``state`` accepts 'open' or 'closed'. ``user_status`` accepts 'radar',
+    'saved', 'applied', or 'none'/'clear' (to unset); the values are mutually
+    exclusive, so setting one replaces the last. Raises ValueError / InvalidId
+    on bad input or missing job.
     """
     oid = ObjectId(job_id)  # raises InvalidId for malformed ids
 
@@ -337,7 +350,9 @@ def update_job_status_in_db(
         elif normalized in VALID_USER_STATUS:
             update["user_status"] = normalized
         else:
-            raise ValueError("user_status must be one of: saved, applied, none")
+            raise ValueError(
+                f"user_status must be one of: {_USER_STATUS_CHOICES}, none"
+            )
 
     if not update:
         raise ValueError("Nothing to update: provide state and/or user_status.")
@@ -356,6 +371,7 @@ def find_jobs(
     state: str = "",
     page: int = 1,
     limit: int = 20,
+    user_status: str = "",
 ) -> Dict[str, Any]:
     """Retrieve a page of job offers from the database.
 
@@ -366,6 +382,8 @@ def find_jobs(
         state: 'open' or 'closed' to narrow by state (default: all states).
         page: 1-based page number (use with total_pages / has_more to iterate).
         limit: Page size (1-100), newest first.
+        user_status: How the user marked the job — 'radar' (on my radar),
+            'saved' or 'applied' (default: all).
 
     Returns the page of jobs plus pagination metadata (total, page, limit,
     total_pages, has_more). Each job has an id to use with update_job_status.
@@ -377,6 +395,7 @@ def find_jobs(
             company=company or None,
             keyword=keyword or None,
             state=state or None,
+            user_status=user_status or None,
         )
         total = count_jobs_in_db(db, **opts)
         jobs = find_jobs_in_db(db, page=page, limit=limit, **opts)
@@ -408,7 +427,8 @@ def update_job_status(
     Args:
         job_id: The job's id (from find_jobs).
         state: 'closed' to close (mark no longer open), 'open' to reopen.
-        user_status: 'saved', 'applied', or 'none' to clear. Optional.
+        user_status: 'radar' (on my radar), 'saved', 'applied', or 'none' to
+            clear. Mutually exclusive — setting one replaces the last. Optional.
 
     At least one of state / user_status must be provided. Returns the
     updated job summary.

@@ -27,6 +27,23 @@ _BLOCK_BOUNDARY_RE = re.compile(r"(?i)<\s*/?(br|/?p|/?li|/?h[1-6]|/?div|/?ul|/?o
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
+# The user's relationship to an opportunity, held in a single ``user_status``
+# field. The values are mutually exclusive — setting one replaces the last — so
+# they read as a progression: radar (worth watching) → saved → applied. Unset
+# means untriaged. A URL queued on /import starts life on the radar; see
+# ``routes_import.stage_urls``.
+USER_STATUS_RADAR = "radar"
+USER_STATUS_SAVED = "saved"
+USER_STATUS_APPLIED = "applied"
+USER_STATUSES = (USER_STATUS_RADAR, USER_STATUS_SAVED, USER_STATUS_APPLIED)
+
+# Display names for the job form and the list filter, keyed by stored value.
+USER_STATUS_LABELS = {
+    USER_STATUS_RADAR: "On my radar",
+    USER_STATUS_SAVED: "Saved",
+    USER_STATUS_APPLIED: "Applied",
+}
+
 
 def _parse_pagination() -> Tuple[int, int]:
     """Parse pagination params from the query string."""
@@ -94,6 +111,14 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         filters["state"] = "closed"
         echo["state"] = "closed"
 
+    # Narrow to one user_status, e.g. everything on my radar. An unrecognised
+    # value is ignored rather than matched literally, so a stray query parameter
+    # shows the full list instead of silently emptying it.
+    user_status = request.args.get("user_status", "").strip().lower()
+    if user_status in USER_STATUSES:
+        filters["user_status"] = user_status
+        echo["user_status"] = user_status
+
     return filters, echo
 
 
@@ -116,8 +141,8 @@ def _parse_job_id(job_id: str):
 def _normalize_user_status(raw_value: str) -> Optional[str]:
     """Normalize user_status input into stored values."""
     normalized = raw_value.strip().lower()
-    if normalized not in {"saved", "applied", "none"}:
-        normalized = "saved"
+    if normalized not in set(USER_STATUSES) | {"none"}:
+        normalized = USER_STATUS_SAVED
     if normalized == "none":
         return None
     return normalized
@@ -171,6 +196,9 @@ def list_jobs():
         total_pages=total_pages,
         filters=echo,
         state_filter=echo.get("state", "all"),
+        user_status_filter=echo.get("user_status", "all"),
+        user_statuses=USER_STATUSES,
+        user_status_labels=USER_STATUS_LABELS,
     )
 
 

@@ -592,3 +592,94 @@ def test_commit_closed_no_match_imports_closed_record(app_client, monkeypatch):
     assert job is not None
     assert job["state"] == "closed"
     assert job["status"] == routes_import.STATUS_IMPORTED
+
+
+# ── Queued URLs arrive "on my radar" ─────────────────────────────────
+
+
+def test_stage_urls_marks_queued_urls_as_on_radar():
+    fake_db = FakeDB(jobs=[], profiles=[])
+
+    routes_import.stage_urls(fake_db, ["https://example.com/a"], source="manual")
+
+    pending = fake_db.import_staging.find_one({"url": "https://example.com/a"})
+    assert pending["user_status"] == routes_import.USER_STATUS_RADAR
+
+
+def test_queued_url_stays_on_radar_through_enrichment_and_commit(app_client, monkeypatch):
+    """A URL queued on /import carries its radar mark all the way to the job."""
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_urls(fake_db, ["https://example.com/a"], source="manual")
+
+    # An MCP client enriches the URL and imports a file, promoting the pending
+    # record in place. The promotion must not drop the mark.
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Role A", "company": "Acme", "url": "https://example.com/a"}],
+        source="enriched.json",
+    )
+    staged = fake_db.import_staging.find_one({"title": "Role A"})
+    assert staged["user_status"] == routes_import.USER_STATUS_RADAR
+
+    app_client.post("/import/commit", data={"select": str(staged["_id"])})
+
+    assert fake_db.jobs.find_one({"title": "Role A"})["user_status"] == (
+        routes_import.USER_STATUS_RADAR
+    )
+
+
+def test_file_uploaded_opportunity_is_not_on_radar(app_client, monkeypatch):
+    """Only URLs queued in the import view get the mark -- not plain uploads."""
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Role B", "company": "Beta", "url": "https://example.com/b"}],
+    )
+    staged = fake_db.import_staging.find_one({"title": "Role B"})
+
+    app_client.post("/import/commit", data={"select": str(staged["_id"])})
+
+    assert fake_db.jobs.find_one({"title": "Role B"}).get("user_status") is None
+
+
+def test_commit_leaves_an_existing_jobs_user_status_alone(app_client, monkeypatch):
+    """Importing over a known job must not knock it back from applied to radar."""
+    external_id = routes_import.BaseCrawler.hash_external_id(
+        routes_import.IMPORT_SITE, "https://example.com/a"
+    )
+    existing_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[
+            {
+                "_id": existing_id,
+                "title": "Role A",
+                "company": "Acme",
+                "url": "https://example.com/a",
+                "site": routes_import.IMPORT_SITE,
+                "external_id": external_id,
+                "user_status": "applied",
+            }
+        ],
+        profiles=[],
+    )
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    fake_db.import_staging.insert_one(
+        {
+            "title": "Role A",
+            "company": "Acme",
+            "url": "https://example.com/a",
+            "state": routes_import.STATE_OPEN,
+            "status": routes_import.STATUS_STAGED,
+            "user_status": routes_import.USER_STATUS_RADAR,
+        }
+    )
+    staged = fake_db.import_staging.find_one({"status": routes_import.STATUS_STAGED})
+
+    app_client.post("/import/commit", data={"select": str(staged["_id"])})
+
+    assert fake_db.jobs.find_one({"_id": existing_id})["user_status"] == "applied"

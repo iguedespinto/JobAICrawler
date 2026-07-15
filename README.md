@@ -51,7 +51,9 @@ opportunities:
    **Queue URLs**. Each URL is checked against active imported jobs and all
    staged records; only new, single-posting URLs are kept (search/results pages
    are rejected). They are stored as `unprocessed` records, hidden from the
-   staging table below.
+   staging table below, and marked **On my radar** (see below) — queuing a URL
+   by hand counts as an expression of interest, and the mark rides through to
+   the imported opportunity.
 2. An MCP client retrieves them with `find_pending_urls`, validates each URL,
    confirms the job is still open, and writes a JSON import file with the full
    fields.
@@ -61,6 +63,19 @@ opportunities:
 
 Use **Clear pending URLs** to drop URLs that never produced a record (e.g. a job
 that has since closed).
+
+### Tracking opportunities
+
+Each opportunity carries a single `user_status` marking your relationship to it:
+**On my radar** (`radar`), **Saved** (`saved`), **Applied** (`applied`), or unset.
+The values are mutually exclusive and read as a progression — setting one
+replaces the last — and are set from the job page or the MCP `update_job_status`
+tool. The **Status** row on `/jobs` filters the list by them, as does the
+`user_status` argument to the MCP `find_jobs` tool.
+
+A URL queued on `/import` starts life on the radar. The mark is applied only
+when the opportunity is first created, so re-importing a job you have since
+marked **Applied** never knocks it back.
 
 ### Environment variables
 
