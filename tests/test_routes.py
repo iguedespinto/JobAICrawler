@@ -72,6 +72,69 @@ def test_jobs_list_keyword_filter_exact_match(app_client, monkeypatch):
     assert "Frontend" not in body
 
 
+def test_jobs_list_company_filter_exact_match(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Backend", "company": "Acme"},
+            {"_id": ObjectId(), "title": "Mobile", "company": "acme"},
+            {"_id": ObjectId(), "title": "Data", "company": "Acme Corp"},
+            {"_id": ObjectId(), "title": "Frontend", "company": "Globex"},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    # Exact (case-insensitive) company match: "Acme" and "acme", but not the
+    # different company "Acme Corp" that merely starts with the same word.
+    body = app_client.get("/jobs?company=Acme").data.decode("utf-8")
+    assert "Backend" in body
+    assert "Mobile" in body
+    assert "Acme Corp" not in body
+    assert "Frontend" not in body
+
+
+def test_jobs_list_company_name_links_to_filtered_view(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[{"_id": ObjectId(), "title": "Backend", "company": "Acme"}],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+    assert 'href="/jobs?company=Acme"' in body
+
+
+def test_jobs_list_company_filter_combines_with_state(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Acme Open", "company": "Acme", "state": "open"},
+            {"_id": ObjectId(), "title": "Acme Closed", "company": "Acme", "state": "closed"},
+            {"_id": ObjectId(), "title": "Globex Open", "company": "Globex", "state": "open"},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?company=Acme&state=open").data.decode("utf-8")
+    assert "Acme Open" in body
+    assert "Acme Closed" not in body
+    assert "Globex Open" not in body
+
+    # The state links keep the company filter, so switching state stays scoped.
+    assert 'href="/jobs?state=closed&amp;company=Acme"' in body
+    # The company link keeps the state, so it never widens the current view.
+    assert 'href="/jobs?company=Acme&amp;state=open"' in body
+
+
 def test_jobs_list_search_escapes_special_characters(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[

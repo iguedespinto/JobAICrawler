@@ -76,6 +76,14 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         filters["keywords"] = {"$regex": pattern, "$options": "i"}
         echo["keyword"] = keyword
 
+    # Exact (case-insensitive) company match, used by the company link on each
+    # card to show every opportunity at that company. Anchored so a company is
+    # not matched by another whose name merely contains it.
+    company = request.args.get("company", "").strip()
+    if company:
+        filters["company"] = {"$regex": f"^{re.escape(company)}$", "$options": "i"}
+        echo["company"] = company
+
     # All jobs by default; ?state=open or ?state=closed narrows to one state.
     # A job with no stored state counts as open.
     state = request.args.get("state", "").strip().lower()
