@@ -36,7 +36,7 @@
           <strong style="margin-right: 0.5rem;">{{ opt | capitalize }}</strong>
         {% else %}
           <a style="margin-right: 0.5rem;"
-             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword')) }}">{{ opt | capitalize }}</a>
+             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">{{ opt | capitalize }}</a>
         {% endif %}
       {% endfor %}
     </div>
@@ -52,11 +52,12 @@
     <form method="get" action="{{ url_for('jobs.list_jobs') }}">
       {% if filters.get('state') %}<input type="hidden" name="state" value="{{ filters.get('state') }}" />{% endif %}
       {% if filters.get('keyword') %}<input type="hidden" name="keyword" value="{{ filters.get('keyword') }}" />{% endif %}
+      {% if filters.get('company') %}<input type="hidden" name="company" value="{{ filters.get('company') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
              placeholder="Search title, keywords, description" style="width: 320px;" />
       <button type="submit">Search</button>
       {% if filters.get('q') %}
-        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword')) }}"
+        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company')) }}"
            style="margin-left: 0.5rem;">Clear</a>
       {% endif %}
     </form>
@@ -68,6 +69,13 @@
       </p>
     {% endif %}
 
+    {% if filters.get('company') %}
+      <p style="margin-top: 0.75rem;">
+        Showing opportunities at <strong>{{ filters.get('company') }}</strong>.
+        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword')) }}">Clear company</a>
+      </p>
+    {% endif %}
+
     {% if jobs %}
       <div class="jobs-grid">
       {% for job in jobs %}
@@ -76,7 +84,14 @@
             <a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a>
             <span class="badge {{ job.state }}">{{ job.state }}</span>
           </h3>
-          <div class="meta">{{ job.company }}{% if job.location %} · {{ job.location }}{% endif %}</div>
+          <div class="meta">
+            {% if job.company %}
+              {# Keeps the current state scope, so filtering by company does not
+                 quietly surface roles the state filter had excluded. #}
+              <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state')) }}">{{ job.company }}</a>
+            {% endif %}
+            {% if job.location %} · {{ job.location }}{% endif %}
+          </div>
           <div class="meta">Added: {{ job.created_at or "n/a" }}</div>
           {% if job.salary %}
             <div class="meta">Salary: {{ job.salary }}</div>
