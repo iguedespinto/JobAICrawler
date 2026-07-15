@@ -175,6 +175,77 @@ def test_suggestion_routes_render_accept_discard(app_client, monkeypatch):
     assert db.targets.find_one({"name": "Remote"}) is None
 
 
+def test_clear_suggestions_empties_the_queue():
+    db = FakeDB(jobs=[], profiles=[])
+    routes_targets.add_target(db, "company", "Google")  # a real target, not a suggestion
+    routes_targets.add_suggestions(
+        db,
+        [
+            {"kind": "company", "name": "Stripe"},
+            {"kind": "role", "name": "SRE"},
+            {"kind": "factor", "name": "Remote"},
+        ],
+    )
+
+    assert routes_targets.clear_suggestions(db) == 3
+    assert db.target_suggestions.count_documents({}) == 0
+    # Clearing the review queue must not touch the targets you already kept.
+    assert [t["name"] for t in routes_targets.list_targets(db)["companies"]] == ["Google"]
+
+
+def test_clear_suggestions_on_an_empty_queue_is_a_no_op():
+    db = FakeDB(jobs=[], profiles=[])
+
+    assert routes_targets.clear_suggestions(db) == 0
+
+
+def test_clear_suggestions_route(app_client, monkeypatch):
+    db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_targets, "get_db", lambda: db)
+    routes_targets.add_target(db, "company", "Google")
+    routes_targets.add_suggestions(
+        db, [{"kind": "company", "name": "Stripe"}, {"kind": "role", "name": "SRE"}]
+    )
+
+    body = app_client.post(
+        "/targets/suggestions/clear", follow_redirects=True
+    ).data.decode("utf-8")
+
+    assert "Discarded 2 suggestions." in body
+    assert db.target_suggestions.count_documents({}) == 0
+    assert db.targets.find_one({"name": "Google"}) is not None
+    assert "Stripe" not in body and "SRE" not in body
+
+
+def test_clear_suggestions_route_when_empty(app_client, monkeypatch):
+    db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_targets, "get_db", lambda: db)
+
+    body = app_client.post(
+        "/targets/suggestions/clear", follow_redirects=True
+    ).data.decode("utf-8")
+
+    assert "No suggestions to discard." in body
+
+
+def test_targets_page_offers_clear_all_only_when_there_are_suggestions(
+    app_client, monkeypatch
+):
+    db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_targets, "get_db", lambda: db)
+
+    # Nothing to clear -> no button to press.
+    assert "suggestions/clear" not in app_client.get("/targets").data.decode("utf-8")
+
+    routes_targets.add_suggestions(db, [{"kind": "company", "name": "Stripe"}])
+    body = app_client.get("/targets").data.decode("utf-8")
+
+    assert "suggestions/clear" in body
+    assert "Discard all" in body
+    # Bulk delete: guard it behind a confirm, as the import page's clears are.
+    assert "confirm(" in body
+
+
 def test_targets_routes_add_render_delete(app_client, monkeypatch):
     db = FakeDB(jobs=[], profiles=[])
     monkeypatch.setattr(routes_targets, "get_db", lambda: db)
