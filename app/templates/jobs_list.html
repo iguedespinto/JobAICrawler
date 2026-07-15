@@ -15,8 +15,9 @@
       .badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 3px; color: #fff; vertical-align: middle; }
       .badge.open { background: #00695c; }
       .badge.closed { background: #37474f; }
-      .pagination { margin-top: 1rem; }
-      .pagination a { margin-right: 0.75rem; }
+      .load-more { margin-top: 1.5rem; text-align: center; }
+      .load-more a { display: inline-block; padding: 0.5rem 1.25rem; border: 1px solid #ddd; }
+      #scroll-status { margin-top: 0.75rem; text-align: center; }
     </style>
   </head>
   <body>
@@ -99,46 +100,119 @@
     {% endif %}
 
     {% if jobs %}
-      <div class="jobs-grid">
-      {% for job in jobs %}
-        <div class="job">
-          <h3>
-            <a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a>
-            <span class="badge {{ job.state }}">{{ job.state }}</span>
-          </h3>
-          <div class="meta">
-            {% if job.company %}
-              {# Keeps the current state and status scope, so filtering by company
-                 does not quietly surface roles those filters had excluded. #}
-              <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state'), user_status=filters.get('user_status')) }}">{{ job.company }}</a>
-            {% endif %}
-            {% if job.location %} · {{ job.location }}{% endif %}
-          </div>
-          <div class="meta">Added: {{ job.created_at or "n/a" }}</div>
-          {% if job.salary %}
-            <div class="meta">Salary: {{ job.salary }}</div>
-          {% endif %}
-          {% if job.keywords %}
-            <div class="meta">{{ job.keywords | join(', ') }}</div>
-          {% endif %}
-          {% if job.user_status %}
-            <div class="meta">Status: {{ status_filter_labels.get(job.user_status, job.user_status) }}</div>
-          {% endif %}
-        </div>
-      {% endfor %}
+      <div class="jobs-grid" id="jobs-grid">
+        {% include "_job_cards.html" %}
       </div>
     {% else %}
       <p>No jobs found.</p>
     {% endif %}
 
-    <div class="pagination">
-      {% if page > 1 %}
-        <a href="{{ url_for('jobs.list_jobs', page=page-1, per_page=per_page, **filters) }}">Previous</a>
-      {% endif %}
-      <span>Page {{ page }} of {{ total_pages }}</span>
-      {% if page < total_pages %}
-        <a href="{{ url_for('jobs.list_jobs', page=page+1, per_page=per_page, **filters) }}">Next</a>
-      {% endif %}
-    </div>
+    {# The list loads as you scroll. The link below is the real fallback, not a
+       decoration: without JS (or if a fetch fails) it is an ordinary link to the
+       next page, and the script only takes it over once it knows it can. #}
+    {% if page < total_pages %}
+      <div class="load-more" id="load-more-wrap"
+           data-next-page="{{ page + 1 }}" data-total-pages="{{ total_pages }}">
+        <a id="load-more"
+           href="{{ url_for('jobs.list_jobs', page=page+1, per_page=per_page, **filters) }}">Load more</a>
+      </div>
+    {% endif %}
+
+    <p class="meta" id="scroll-status"
+       data-total="{{ total }}">Showing {{ jobs | length }} of {{ total }} opportunities.</p>
+
+    <script>
+      // Infinite scroll: append the next page's cards when the sentinel nears
+      // the viewport. Progressive enhancement — if anything here is missing or
+      // fails, the "Load more" link is left alone and still navigates.
+      (function () {
+        var wrap = document.getElementById("load-more-wrap");
+        if (!wrap) return;                                  // single page, nothing to load
+        if (!("IntersectionObserver" in window) || !window.fetch) return;
+
+        var link = document.getElementById("load-more");
+        var grid = document.getElementById("jobs-grid");
+        var status = document.getElementById("scroll-status");
+        var total = status ? parseInt(status.dataset.total, 10) : 0;
+        var totalPages = parseInt(wrap.dataset.totalPages, 10);
+        var nextPage = parseInt(wrap.dataset.nextPage, 10);
+        var loading = false;
+        var failed = false;
+
+        function pageUrl(page, partial) {
+          var url = new URL(link.getAttribute("href"), window.location.href);
+          url.searchParams.set("page", page);
+          if (partial) url.searchParams.set("partial", "1");
+          return url.toString();
+        }
+
+        function finish() {
+          observer.disconnect();
+          wrap.remove();
+        }
+
+        function refreshStatus() {
+          if (!status) return;
+          var shown = grid.querySelectorAll(".job").length;
+          status.textContent = "Showing " + shown + " of " + total + " opportunities.";
+        }
+
+        // The sentinel may still be on screen after appending (a short page, or
+        // a tall window). IntersectionObserver only fires on change, so ask again.
+        function stillInView() {
+          var box = wrap.getBoundingClientRect();
+          return box.top < window.innerHeight + 300;
+        }
+
+        function load() {
+          if (loading || failed || nextPage > totalPages) return;
+          loading = true;
+          link.textContent = "Loading…";
+
+          fetch(pageUrl(nextPage, true), { credentials: "same-origin" })
+            .then(function (response) {
+              if (!response.ok) throw new Error("HTTP " + response.status);
+              return response.text();
+            })
+            .then(function (html) {
+              var holder = document.createElement("div");
+              holder.innerHTML = html;
+              var added = holder.querySelectorAll(".job").length;
+              while (holder.firstElementChild) grid.appendChild(holder.firstElementChild);
+
+              nextPage += 1;
+              loading = false;
+              link.textContent = "Load more";
+              refreshStatus();
+
+              // A short page means the server ran out early; don't keep asking.
+              if (added === 0 || nextPage > totalPages) return finish();
+              link.setAttribute("href", pageUrl(nextPage, false));
+              if (stillInView()) load();
+            })
+            .catch(function () {
+              // Hand back to the plain link rather than retrying in a loop.
+              loading = false;
+              failed = true;
+              link.textContent = "Load more";
+              observer.disconnect();
+            });
+        }
+
+        var observer = new IntersectionObserver(function (entries) {
+          entries.forEach(function (entry) {
+            if (entry.isIntersecting) load();
+          });
+        }, { rootMargin: "300px" });
+        observer.observe(wrap);
+
+        // Clicking should load in place too, not navigate away.
+        link.addEventListener("click", function (event) {
+          if (failed) return;                               // let the link do its job
+          event.preventDefault();
+          load();
+        });
+      })();
+    </script>
   </body>
 </html>

@@ -168,7 +168,12 @@ def _format_date(value: Any) -> Optional[str]:
 
 @jobs_bp.route("", methods=["GET"])
 def list_jobs():
-    """Paginated list of jobs ordered by record creation date (newest first)."""
+    """A page of jobs ordered by record creation date (newest first).
+
+    A page is the unit the browser fetches as it scrolls. ``?partial=1`` returns
+    that page's cards on their own, which the infinite-scroll script appends to
+    the grid; without it the whole page is rendered around the first batch.
+    """
     db, error = _get_db_or_error()
     if error:
         return error
@@ -176,7 +181,12 @@ def list_jobs():
     page, per_page = _parse_pagination()
     filters, echo = _build_filters()
 
-    sort = [("created_at", -1)]
+    # Tie-break on _id so the ordering is a stable total order across pages. A
+    # whole import batch shares one created_at (commit stamps a single now), so
+    # sorting on that alone leaves tied jobs in an arbitrary order and skip/limit
+    # can repeat one job on the next page while dropping another entirely. The
+    # MCP server sorts the same way for the same reason.
+    sort = [("created_at", -1), ("_id", -1)]
     cursor = db.jobs.find(filters).sort(sort).skip((page - 1) * per_page).limit(per_page)
     total = db.jobs.count_documents(filters)
     total_pages = max(1, (total + per_page - 1) // per_page)
@@ -196,6 +206,16 @@ def list_jobs():
                 "state": job.get("state") or "open",
                 "created_at": _format_date(job.get("created_at")),
             }
+        )
+
+    # The scroll script asks for one page's cards at a time; everything else on
+    # the page (nav, filters, the script itself) would only be appended twice.
+    if request.args.get("partial"):
+        return render_template(
+            "_job_cards.html",
+            jobs=jobs,
+            filters=echo,
+            status_filter_labels=STATUS_FILTER_LABELS,
         )
 
     return render_template(

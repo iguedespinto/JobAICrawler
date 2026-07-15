@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from datetime import datetime, timezone
+
 from bson import ObjectId
 
 from tests.conftest import FakeDB
@@ -406,3 +409,143 @@ def test_jobs_list_offers_the_radar_filter(app_client, monkeypatch):
     body = app_client.get("/jobs").data.decode("utf-8")
     assert "On my radar" in body
     assert "user_status=radar" in body
+
+
+# ── Infinite scroll ──────────────────────────────────────────────────
+
+
+def _paged_db(count: int = 5, created_at=None):
+    """Jobs that all share one created_at, as a real import batch does."""
+    stamp = created_at or datetime(2026, 7, 1, tzinfo=timezone.utc)
+    return FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": f"Role {i}", "company": "Acme",
+             "created_at": stamp}
+            for i in range(count)
+        ],
+        profiles=[],
+    )
+
+
+def _card_ids(body: str):
+    return re.findall(r"/jobs/([a-f0-9]{24})", body)
+
+
+def test_jobs_list_partial_returns_cards_without_page_chrome(app_client, monkeypatch):
+    """?partial=1 is what the scroll script fetches: cards only, no layout."""
+    fake_db = _paged_db(3)
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?partial=1").data.decode("utf-8")
+
+    assert 'class="job"' in body
+    assert len(_card_ids(body)) == 3
+    # None of the surrounding page: no doctype, nav, heading, filters or script.
+    assert "<!DOCTYPE" not in body
+    assert "<h1>" not in body
+    assert "jobs-grid" not in body
+    assert "<script" not in body
+
+
+def test_jobs_list_partial_respects_page_and_filters(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Acme A", "company": "Acme"},
+            {"_id": ObjectId(), "title": "Acme B", "company": "Acme"},
+            {"_id": ObjectId(), "title": "Globex C", "company": "Globex"},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    first = app_client.get("/jobs?company=Acme&per_page=1&page=1").data.decode("utf-8")
+    second = app_client.get(
+        "/jobs?company=Acme&per_page=1&page=2&partial=1"
+    ).data.decode("utf-8")
+
+    # The filter still applies to a partial, and page 2 is a different card.
+    assert len(_card_ids(second)) == 1
+    assert _card_ids(second)[0] not in _card_ids(first)
+    assert "Globex C" not in second
+
+
+def test_jobs_list_has_load_more_link_until_the_last_page(app_client, monkeypatch):
+    fake_db = _paged_db(5)
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    # 5 jobs at 2 per page -> pages 1 and 2 offer more, page 3 is the end.
+    first = app_client.get("/jobs?per_page=2").data.decode("utf-8")
+    assert 'id="load-more"' in first
+    assert "page=2" in first
+
+    last = app_client.get("/jobs?per_page=2&page=3").data.decode("utf-8")
+    assert 'id="load-more"' not in last
+
+
+def test_jobs_list_load_more_keeps_the_active_filters(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Saved A", "user_status": "saved"},
+            {"_id": ObjectId(), "title": "Saved B", "user_status": "saved"},
+            {"_id": ObjectId(), "title": "Saved C", "user_status": "saved"},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?user_status=radar&per_page=2").data.decode("utf-8")
+
+    # The next-page URL must carry the filter, or scrolling would widen the list.
+    link = re.search(r'id="load-more"[^>]*href="([^"]+)"', body)
+    assert link is not None
+    assert "user_status=radar" in link.group(1)
+    assert "page=2" in link.group(1)
+
+
+def test_jobs_list_drops_previous_next_pagination(app_client, monkeypatch):
+    fake_db = _paged_db(5)
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?per_page=2").data.decode("utf-8")
+
+    assert "Previous" not in body
+    assert "Page 1 of" not in body
+
+
+def test_jobs_list_paging_is_stable_across_tied_timestamps(app_client, monkeypatch):
+    """A whole import batch shares one created_at, so the sort needs a tie-break.
+
+    Without one, skip/limit leaves tied jobs in an arbitrary order and a page can
+    repeat a job while dropping another. Infinite scroll makes that visible as a
+    duplicate card mid-scroll. (The fake sorts stably, so this pins the intended
+    contract; the instability itself only appears against real Mongo.)
+    """
+    fake_db = _paged_db(6)
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    seen = []
+    for page in range(1, 4):
+        body = app_client.get(f"/jobs?per_page=2&page={page}").data.decode("utf-8")
+        seen.extend(_card_ids(body))
+
+    # Every job reachable exactly once: no overlap between pages, none dropped.
+    assert len(seen) == 6
+    assert len(set(seen)) == 6
