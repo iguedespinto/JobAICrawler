@@ -51,6 +51,27 @@ STATUS_FILTER_LABELS = {
     USER_STATUS_APPLIED: "Applied",
 }
 
+# Grouping the list by company. Grouped mode is ordered by company rather than
+# by date — that is what puts a company's roles together — so it offers its own
+# order: "recent" keeps the ungrouped list's newest-first feel at the group
+# level, "name" is for finding a company you can name, "count" for seeing where
+# the options are concentrated. Within a company, newest still wins.
+GROUP_COMPANY = "company"
+GROUP_ORDER_RECENT = "recent"
+GROUP_ORDER_NAME = "name"
+GROUP_ORDER_COUNT = "count"
+GROUP_ORDERS = (GROUP_ORDER_RECENT, GROUP_ORDER_NAME, GROUP_ORDER_COUNT)
+GROUP_ORDER_LABELS = {
+    GROUP_ORDER_RECENT: "Most recent",
+    GROUP_ORDER_NAME: "A→Z",
+    GROUP_ORDER_COUNT: "Most jobs",
+}
+
+# Jobs with no company still have to land somewhere; they bucket together and
+# sort last whatever order is chosen, being a gap in the data rather than an
+# employer competing for the top of the list.
+NO_COMPANY_LABEL = "(No company)"
+
 
 def _parse_pagination() -> Tuple[int, int]:
     """Parse pagination params from the query string."""
@@ -166,6 +187,69 @@ def _format_date(value: Any) -> Optional[str]:
     return None
 
 
+def _company_key(value: Any) -> Tuple[int, str]:
+    """Grouping key for a company: case/space-insensitive, blanks bucketed last.
+
+    The leading flag is what sorts company-less jobs to the end: it leads every
+    comparison, so it wins before the chosen order is even consulted.
+    """
+    name = " ".join(str(value or "").split()).lower()
+    return (1, "") if not name else (0, name)
+
+
+def _epoch(value: Any) -> float:
+    """A stored datetime as a sortable number; missing dates sort oldest."""
+    return value.timestamp() if isinstance(value, datetime) else 0.0
+
+
+def _company_groups(docs: List[Dict[str, Any]]) -> Dict[Tuple[int, str], Dict[str, Any]]:
+    """Per-company display label, job count and newest timestamp."""
+    groups: Dict[Tuple[int, str], Dict[str, Any]] = {}
+    for doc in docs:
+        key = _company_key(doc.get("company"))
+        group = groups.get(key)
+        if group is None:
+            label = str(doc.get("company") or "").strip() or NO_COMPANY_LABEL
+            group = groups[key] = {"label": label, "count": 0, "newest": 0.0}
+        group["count"] += 1
+        group["newest"] = max(group["newest"], _epoch(doc.get("created_at")))
+    return groups
+
+
+def _company_ordered(
+    db, filters: Dict[str, Any], order: str
+) -> Tuple[List[Dict[str, Any]], Dict[Tuple[int, str], Dict[str, Any]]]:
+    """Every matching job, ordered so each company's jobs are contiguous.
+
+    Grouping needs the whole result set: where a company belongs depends on all
+    of its jobs — its newest, its size — which a single page cannot know. So this
+    reads the matches and orders them in Python, as the dashboard already does
+    for keywords, rather than growing an aggregation pipeline the test fake would
+    then have to mimic. Fine at this list's size; revisit if it grows a lot.
+    """
+    docs = list(db.jobs.find(filters))
+    groups = _company_groups(docs)
+
+    # Stable sorts, least significant first: inside a company the newest job
+    # wins (with the same _id tie-break the flat list needs), then each company
+    # moves as a block to its place in the chosen order.
+    docs.sort(key=lambda doc: str(doc.get("_id")), reverse=True)
+    docs.sort(key=lambda doc: _epoch(doc.get("created_at")), reverse=True)
+
+    if order == GROUP_ORDER_NAME:
+        def rank(key):
+            return (key[0], key[1])
+    elif order == GROUP_ORDER_COUNT:
+        def rank(key):
+            return (key[0], -groups[key]["count"], key[1])
+    else:
+        def rank(key):
+            return (key[0], -groups[key]["newest"], key[1])
+
+    docs.sort(key=lambda doc: rank(_company_key(doc.get("company"))))
+    return docs, groups
+
+
 @jobs_bp.route("", methods=["GET"])
 def list_jobs():
     """A page of jobs ordered by record creation date (newest first).
@@ -181,33 +265,63 @@ def list_jobs():
     page, per_page = _parse_pagination()
     filters, echo = _build_filters()
 
-    # Tie-break on _id so the ordering is a stable total order across pages. A
-    # whole import batch shares one created_at (commit stamps a single now), so
-    # sorting on that alone leaves tied jobs in an arbitrary order and skip/limit
-    # can repeat one job on the next page while dropping another entirely. The
-    # MCP server sorts the same way for the same reason.
-    sort = [("created_at", -1), ("_id", -1)]
-    cursor = db.jobs.find(filters).sort(sort).skip((page - 1) * per_page).limit(per_page)
-    total = db.jobs.count_documents(filters)
+    grouped = request.args.get("group", "").strip().lower() == GROUP_COMPANY
+    group_order = request.args.get("group_order", "").strip().lower()
+    if group_order not in GROUP_ORDERS:
+        group_order = GROUP_ORDER_RECENT
+    if grouped:
+        # Echoed so every link and the scroll's next-page fetch stay grouped the
+        # same way; appending cards ordered differently would be nonsense.
+        echo["group"] = GROUP_COMPANY
+        echo["group_order"] = group_order
+
+    skip = (page - 1) * per_page
+    previous: Optional[Dict[str, Any]] = None
+    groups: Dict[Tuple[int, str], Dict[str, Any]] = {}
+
+    if grouped:
+        ordered, groups = _company_ordered(db, filters, group_order)
+        total = len(ordered)
+        window: Any = ordered[skip : skip + per_page]
+        # The card just before this page decides whether the first one opens a
+        # group: without it, a company split by a page boundary would announce
+        # itself a second time in the batch the scroll appends.
+        previous = ordered[skip - 1] if 0 < skip <= len(ordered) else None
+    else:
+        # Tie-break on _id so the ordering is a stable total order across pages.
+        # A whole import batch shares one created_at (commit stamps a single
+        # now), so sorting on that alone leaves tied jobs in an arbitrary order
+        # and skip/limit can repeat one job on the next page while dropping
+        # another entirely. The MCP server sorts the same way for the same reason.
+        sort = [("created_at", -1), ("_id", -1)]
+        window = db.jobs.find(filters).sort(sort).skip(skip).limit(per_page)
+        total = db.jobs.count_documents(filters)
+
     total_pages = max(1, (total + per_page - 1) // per_page)
 
     jobs = []
-    for job in cursor:
-        jobs.append(
-            {
-                "id": str(job["_id"]),
-                "title": job.get("title"),
-                "company": job.get("company"),
-                "location": job.get("location"),
-                "url": job.get("url"),
-                "salary": job.get("salary"),
-                "keywords": job.get("keywords", []),
-                "status": job.get("status"),
-                "user_status": job.get("user_status"),
-                "state": job.get("state") or "open",
-                "created_at": _format_date(job.get("created_at")),
-            }
-        )
+    previous_key = _company_key(previous.get("company")) if previous else None
+    for job in window:
+        card = {
+            "id": str(job["_id"]),
+            "title": job.get("title"),
+            "company": job.get("company"),
+            "location": job.get("location"),
+            "url": job.get("url"),
+            "salary": job.get("salary"),
+            "keywords": job.get("keywords", []),
+            "status": job.get("status"),
+            "user_status": job.get("user_status"),
+            "state": job.get("state") or "open",
+            "created_at": _format_date(job.get("created_at")),
+        }
+        if grouped:
+            key = _company_key(job.get("company"))
+            card["start_group"] = key != previous_key
+            card["group_label"] = groups[key]["label"]
+            card["group_count"] = groups[key]["count"]
+            previous_key = key
+        jobs.append(card)
 
     # The scroll script asks for one page's cards at a time; everything else on
     # the page (nav, filters, the script itself) would only be appended twice.
@@ -231,6 +345,10 @@ def list_jobs():
         user_status_filter=echo.get("user_status", "all"),
         status_filters=STATUS_FILTERS,
         status_filter_labels=STATUS_FILTER_LABELS,
+        grouped=grouped,
+        group_order=group_order,
+        group_orders=GROUP_ORDERS,
+        group_order_labels=GROUP_ORDER_LABELS,
     )
 
 

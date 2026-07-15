@@ -16,6 +16,12 @@
       .badge.open { background: #00695c; }
       .badge.closed { background: #37474f; }
       .job-link { white-space: nowrap; }
+      /* The heading is a grid item like the cards, so span it across every
+         column to make it a band the row below belongs to. */
+      .group-head { grid-column: 1 / -1; margin: 1.25rem 0 0; padding-bottom: 0.3rem;
+                    border-bottom: 2px solid #00695c; font-size: 1.05rem; }
+      .group-head:first-child { margin-top: 0; }
+      .group-count { color: #666; font-weight: normal; font-size: 0.85rem; }
       .load-more { margin-top: 1.5rem; text-align: center; }
       .load-more a { display: inline-block; padding: 0.5rem 1.25rem; border: 1px solid #ddd; }
       #scroll-status { margin-top: 0.75rem; text-align: center; }
@@ -38,9 +44,40 @@
           <strong style="margin-right: 0.5rem;">{{ opt | capitalize }}</strong>
         {% else %}
           <a style="margin-right: 0.5rem;"
-             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">{{ opt | capitalize }}</a>
+             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ opt | capitalize }}</a>
         {% endif %}
       {% endfor %}
+    </div>
+
+    {# Grouping reorders rather than narrows, so it sits below the filters and
+       carries them with it. The order control only appears once grouped: it has
+       nothing to say about a flat, date-ordered list. #}
+    <div style="margin-bottom: 1rem;">
+      Group by:
+      {% if not grouped %}
+        <strong style="margin-right: 0.5rem;">None</strong>
+      {% else %}
+        <a style="margin-right: 0.5rem;"
+           href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">None</a>
+      {% endif %}
+      {% if grouped %}
+        <strong style="margin-right: 0.5rem;">Company</strong>
+      {% else %}
+        <a style="margin-right: 0.5rem;"
+           href="{{ url_for('jobs.list_jobs', group='company', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">Company</a>
+      {% endif %}
+
+      {% if grouped %}
+        <span style="margin-left: 1.5rem;">Order:</span>
+        {% for opt in group_orders %}
+          {% if group_order == opt %}
+            <strong style="margin-right: 0.5rem;">{{ group_order_labels[opt] }}</strong>
+          {% else %}
+            <a style="margin-right: 0.5rem;"
+               href="{{ url_for('jobs.list_jobs', group='company', group_order=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">{{ group_order_labels[opt] }}</a>
+          {% endif %}
+        {% endfor %}
+      {% endif %}
     </div>
 
     {# The two filter rows narrow together: state is about the posting, status is
@@ -52,14 +89,14 @@
         <strong style="margin-right: 0.5rem;">All</strong>
       {% else %}
         <a style="margin-right: 0.5rem;"
-           href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">All</a>
+           href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">All</a>
       {% endif %}
       {% for opt in status_filters %}
         {% if user_status_filter == opt %}
           <strong style="margin-right: 0.5rem;">{{ status_filter_labels[opt] }}</strong>
         {% else %}
           <a style="margin-right: 0.5rem;"
-             href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">{{ status_filter_labels[opt] }}</a>
+             href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ status_filter_labels[opt] }}</a>
         {% endif %}
       {% endfor %}
     </div>
@@ -77,11 +114,13 @@
       {% if filters.get('keyword') %}<input type="hidden" name="keyword" value="{{ filters.get('keyword') }}" />{% endif %}
       {% if filters.get('company') %}<input type="hidden" name="company" value="{{ filters.get('company') }}" />{% endif %}
       {% if filters.get('user_status') %}<input type="hidden" name="user_status" value="{{ filters.get('user_status') }}" />{% endif %}
+      {% if filters.get('group') %}<input type="hidden" name="group" value="{{ filters.get('group') }}" />{% endif %}
+      {% if filters.get('group_order') %}<input type="hidden" name="group_order" value="{{ filters.get('group_order') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
              placeholder="Search title, keywords, description" style="width: 320px;" />
       <button type="submit">Search</button>
       {% if filters.get('q') %}
-        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}"
+        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
            style="margin-left: 0.5rem;">Clear</a>
       {% endif %}
     </form>
@@ -89,14 +128,14 @@
     {% if filters.get('keyword') %}
       <p style="margin-top: 0.75rem;">
         Showing opportunities with keyword <strong>{{ filters.get('keyword') }}</strong>.
-        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), user_status=filters.get('user_status')) }}">Clear keyword</a>
+        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">Clear keyword</a>
       </p>
     {% endif %}
 
     {% if filters.get('company') %}
       <p style="margin-top: 0.75rem;">
         Showing opportunities at <strong>{{ filters.get('company') }}</strong>.
-        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword'), user_status=filters.get('user_status')) }}">Clear company</a>
+        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">Clear company</a>
       </p>
     {% endif %}
 

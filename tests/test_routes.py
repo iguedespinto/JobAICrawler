@@ -527,6 +527,243 @@ def test_jobs_list_drops_previous_next_pagination(app_client, monkeypatch):
     assert "Page 1 of" not in body
 
 
+# ── Grouping by company ──────────────────────────────────────────────
+
+
+def _at(day: int):
+    return datetime(2026, 7, day, tzinfo=timezone.utc)
+
+
+def _grouped_db():
+    """Companies deliberately disagree on recency, name order and size.
+
+    Salesforce is biggest (3) but oldest; Zeta has the newest job but is last
+    alphabetically; Acme is first alphabetically and mid-sized.
+    """
+    return FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "SF One", "company": "Salesforce", "created_at": _at(1)},
+            {"_id": ObjectId(), "title": "SF Two", "company": "Salesforce", "created_at": _at(2)},
+            {"_id": ObjectId(), "title": "SF Three", "company": "Salesforce", "created_at": _at(3)},
+            {"_id": ObjectId(), "title": "Acme One", "company": "Acme", "created_at": _at(5)},
+            {"_id": ObjectId(), "title": "Acme Two", "company": "Acme", "created_at": _at(4)},
+            {"_id": ObjectId(), "title": "Zeta One", "company": "Zeta", "created_at": _at(9)},
+        ],
+        profiles=[],
+    )
+
+
+def _headings(body: str):
+    return re.findall(r'class="group-head"[^>]*>\s*([^<]+?)\s*<', body)
+
+
+def _titles(body: str):
+    return re.findall(r'<a href="/jobs/[a-f0-9]{24}">([^<]+)</a>', body)
+
+
+def test_jobs_list_is_ungrouped_by_default(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+
+    # No headings, and the plain newest-first order is untouched.
+    assert _headings(body) == []
+    assert _titles(body)[0] == "Zeta One"
+
+
+def test_jobs_list_group_by_company_defaults_to_most_recent(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?group=company").data.decode("utf-8")
+
+    # Companies ordered by their newest job: Zeta (9th), Acme (5th), Salesforce (3rd).
+    assert _headings(body) == ["Zeta", "Acme", "Salesforce"]
+    # Each company's jobs sit together, newest first within the company.
+    assert _titles(body) == [
+        "Zeta One", "Acme One", "Acme Two", "SF Three", "SF Two", "SF One",
+    ]
+
+
+def test_jobs_list_group_order_name(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?group=company&group_order=name").data.decode("utf-8")
+
+    assert _headings(body) == ["Acme", "Salesforce", "Zeta"]
+
+
+def test_jobs_list_group_order_count(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?group=company&group_order=count").data.decode("utf-8")
+
+    # Salesforce 3, Acme 2, Zeta 1.
+    assert _headings(body) == ["Salesforce", "Acme", "Zeta"]
+
+
+def test_jobs_list_group_headings_carry_a_count(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?group=company&group_order=name").data.decode("utf-8")
+
+    assert "Acme" in body
+    assert re.search(r'group-count[^>]*>\(2\)', body)
+    assert re.search(r'group-count[^>]*>\(3\)', body)
+
+
+def test_jobs_list_group_order_falls_back_on_a_bogus_value(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?group=company&group_order=bogus").data.decode("utf-8")
+
+    # Unrecognised order behaves as the default rather than erroring or emptying.
+    assert _headings(body) == ["Zeta", "Acme", "Salesforce"]
+
+
+def test_jobs_list_grouped_heading_is_not_repeated_across_pages(app_client, monkeypatch):
+    """A company split by a page boundary keeps one heading, not one per batch."""
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    # In name order the pages are: [Acme, Acme] [SF, SF] [SF, Zeta] -- so
+    # Salesforce's 3 jobs straddle pages 2 and 3.
+    page2 = app_client.get(
+        "/jobs?group=company&group_order=name&per_page=2&page=2&partial=1"
+    ).data.decode("utf-8")
+    page3 = app_client.get(
+        "/jobs?group=company&group_order=name&per_page=2&page=3&partial=1"
+    ).data.decode("utf-8")
+
+    # Page 2 opens Salesforce. Page 3 carries its last job and must not announce
+    # it again, though it does open the next company.
+    assert _headings(page2) == ["Salesforce"]
+    assert "Salesforce" not in _headings(page3)
+    assert _headings(page3) == ["Zeta"]
+
+    # Every job still reachable exactly once across the grouped pages.
+    seen = []
+    for page in range(1, 4):
+        seen.extend(
+            _titles(
+                app_client.get(
+                    f"/jobs?group=company&group_order=name&per_page=2&page={page}"
+                ).data.decode("utf-8")
+            )
+        )
+    assert len(seen) == 6 and len(set(seen)) == 6
+
+
+def test_jobs_list_grouped_composes_with_filters(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Open Acme", "company": "Acme",
+             "state": "open", "created_at": _at(2)},
+            {"_id": ObjectId(), "title": "Closed Acme", "company": "Acme",
+             "state": "closed", "created_at": _at(3)},
+            {"_id": ObjectId(), "title": "Closed Zeta", "company": "Zeta",
+             "state": "closed", "created_at": _at(4)},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?group=company&state=open").data.decode("utf-8")
+
+    # Only the open job survives, so only its company is a group -- and the
+    # count reflects the filter, not the whole database.
+    assert _headings(body) == ["Acme"]
+    assert _titles(body) == ["Open Acme"]
+    assert re.search(r'group-count[^>]*>\(1\)', body)
+
+
+def test_jobs_list_groups_jobs_without_a_company_last(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Nameless", "company": "", "created_at": _at(9)},
+            {"_id": ObjectId(), "title": "Acme One", "company": "Acme", "created_at": _at(1)},
+        ],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?group=company").data.decode("utf-8")
+
+    # Newest first would put the company-less job on top; the junk bucket goes
+    # last regardless of the chosen order.
+    assert _headings(body) == ["Acme", "(No company)"]
+
+
+def test_jobs_list_offers_the_group_controls(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    plain = app_client.get("/jobs").data.decode("utf-8")
+    assert "Group by:" in plain
+    assert "group=company" in plain
+    # The order control is meaningless until grouped, so it stays hidden.
+    assert "group_order=name" not in plain
+
+    grouped = app_client.get("/jobs?group=company").data.decode("utf-8")
+    assert "group_order=name" in grouped
+    assert "group_order=count" in grouped
+    assert "Most recent" in grouped and "Most jobs" in grouped
+
+
+def test_jobs_list_group_survives_scrolling_and_filter_links(app_client, monkeypatch):
+    fake_db = _grouped_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get(
+        "/jobs?group=company&group_order=count&per_page=2"
+    ).data.decode("utf-8")
+
+    # The next page the scroll script fetches must stay grouped the same way,
+    # or the appended cards would be ordered differently from the ones above.
+    link = re.search(r'id="load-more"[^>]*href="([^"]+)"', body)
+    assert link is not None
+    assert "group=company" in link.group(1)
+    assert "group_order=count" in link.group(1)
+
+
 def _linked_db():
     return FakeDB(
         jobs=[
