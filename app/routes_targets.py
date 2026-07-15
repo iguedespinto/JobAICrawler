@@ -236,6 +236,16 @@ def discard_suggestion(db, suggestion_id: str) -> bool:
     return db.target_suggestions.delete_one({"_id": oid}).deleted_count > 0
 
 
+def clear_suggestions(db) -> int:
+    """Discard every pending suggestion. Returns how many were removed.
+
+    Only the review queue is emptied: suggestions already accepted are targets
+    in their own right and are untouched. The MCP client can suggest the same
+    names again, so clearing is a way to say "not now", not a permanent veto.
+    """
+    return db.target_suggestions.delete_many({}).deleted_count
+
+
 # ── HTML page ───────────────────────────────────────────────────────
 
 
@@ -357,4 +367,19 @@ def discard_suggestion_route():
         return redirect(url_for("targets.manage_targets"))
 
     flash("Discarded suggestion." if removed else "Suggestion not found.")
+    return redirect(url_for("targets.manage_targets"))
+
+
+@targets_bp.route("/suggestions/clear", methods=["POST"])
+def clear_suggestions_route():
+    """Dismiss every pending suggestion at once."""
+    db, error = _get_db_or_error()
+    if error:
+        return error
+
+    removed = clear_suggestions(db)
+    if removed:
+        flash(f"Discarded {removed} suggestion{'' if removed == 1 else 's'}.")
+    else:
+        flash("No suggestions to discard.")
     return redirect(url_for("targets.manage_targets"))
