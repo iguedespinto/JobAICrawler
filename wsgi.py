@@ -1,4 +1,4 @@
-"""WSGI entry point for Heroku."""
+"""WSGI entry point, used by ``flask --app wsgi run``."""
 
 from app import create_app
 

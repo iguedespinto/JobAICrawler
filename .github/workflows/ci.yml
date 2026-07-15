@@ -1,0 +1,29 @@
+name: CI
+
+# Run the test suite on every push and PR.
+#
+# This used to deploy to Heroku whenever main went green. That app no longer
+# exists, so every merge since 30 June 2026 failed authenticating against it
+# while the tests passed — a deploy job that only ever reported a false alarm.
+# It is removed rather than left failing; the app runs locally (see the README).
+# Reviving it means restoring the job, recreating the app with its config vars,
+# and setting a fresh HEROKU_API_KEY secret.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+      - name: Run tests
+        run: pytest -q
