@@ -1,9 +1,9 @@
-# Runtime dependencies for the Heroku web app (installed by the buildpack).
-# Test-only tooling lives in requirements-dev.txt so it stays out of the slug.
+# Runtime dependencies for the web app. Test-only tooling lives in
+# requirements-dev.txt so running the app never drags the test stack in.
 Flask>=2.3
 gunicorn>=21.2
 pymongo[srv]>=4.6
 python-dotenv>=1.0
 # Sanitises rich-text job descriptions. Ships prebuilt abi3 manylinux wheels,
-# so Heroku installs it without a Rust toolchain.
+# so it installs without a Rust toolchain.
 nh3>=0.2.15

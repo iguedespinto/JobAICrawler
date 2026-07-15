@@ -16,9 +16,8 @@ JSON import flow.
 5. Run the tests:
    - `pytest`
 
-`requirements.txt` holds only the runtime dependencies the Heroku build needs;
-test tooling lives in `requirements-dev.txt` so it stays out of the deployed
-slug.
+`requirements.txt` holds only what running the app needs; test tooling lives in
+`requirements-dev.txt` so the two stay separable.
 
 ### Importing opportunities
 
@@ -91,11 +90,19 @@ Optional:
 - `SECRET_KEY` - Flask session signing key for flashed messages
   (default: a development value).
 
-### Deploy to Heroku
+### Deployment
 
-1. Create a Heroku app:
-   - `heroku create <app-name>`
-2. Set config vars:
-   - `heroku config:set MONGODB_URI="..."`
-3. Deploy:
-   - `git push heroku main`
+There is none: the app runs locally (see **Run locally**) against MongoDB
+Atlas, so a merge to `main` ships nothing. CI runs the test suite and stops
+there.
+
+It used to deploy to Heroku on every green `main`. That app is gone — the last
+successful deploy was 30 June 2026, and each of the 17 merges after it failed
+authenticating against an app that no longer answers — so the deploy job has
+been removed rather than left to cry wolf on every merge. `Procfile` and
+`gunicorn.conf.py` are leftovers from that setup, kept in case it is ever
+revived; nothing reads them today.
+
+To bring hosting back, restore the deploy job in `.github/workflows/ci.yml`,
+recreate the app with `MONGODB_URI` set, and add a fresh `HEROKU_API_KEY`
+repository secret.
