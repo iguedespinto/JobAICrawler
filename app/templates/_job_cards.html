@@ -15,6 +15,17 @@
       {% endif %}
       {% if job.location %} · {{ job.location }}{% endif %}
     </div>
+    {# Straight to the posting, so reading the list doesn't mean opening each job
+       first. A plain new-tab link on purpose: cards arrive by fetch as you
+       scroll, and this keeps working without a handler being bound to them. #}
+    {% if job.url %}
+      <div class="meta">
+        {# The arrow marks this as leaving the site: it sits right under the
+           company link, which merely filters the list. #}
+        <a href="{{ job.url }}" target="_blank" rel="noopener noreferrer"
+           class="job-link">Job link ↗</a>
+      </div>
+    {% endif %}
     <div class="meta">Added: {{ job.created_at or "n/a" }}</div>
     {% if job.salary %}
       <div class="meta">Salary: {{ job.salary }}</div>
