@@ -60,6 +60,17 @@ def _matches_filter(doc: Dict[str, Any], filter_doc: Dict[str, Any]) -> bool:
             elif "$ne" in value:
                 if _get_nested(doc, key) == value["$ne"]:
                     return False
+            elif "$in" in value:
+                # Mimic Mongo $in: the value matches, or (for a list field) any
+                # element does. A missing field is None, so it only matches an
+                # $in that lists None.
+                target = _get_nested(doc, key)
+                options = value["$in"]
+                if isinstance(target, list):
+                    if not any(item in options for item in target):
+                        return False
+                elif target not in options:
+                    return False
             elif "$regex" in value:
                 if not _regex_matches(
                     _get_nested(doc, key), value["$regex"], value.get("$options", "")

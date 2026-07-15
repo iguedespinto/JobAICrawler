@@ -28,18 +28,25 @@ _BLOCK_BOUNDARY_RE = re.compile(r"(?i)<\s*/?(br|/?p|/?li|/?h[1-6]|/?div|/?ul|/?o
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
 # The user's relationship to an opportunity, held in a single ``user_status``
-# field. The values are mutually exclusive — setting one replaces the last — so
-# they read as a progression: radar (worth watching) → saved → applied. Unset
-# means untriaged. A URL queued on /import starts life on the radar; see
-# ``routes_import.stage_urls``.
-USER_STATUS_RADAR = "radar"
+# field. The values are mutually exclusive — setting one replaces the last — and
+# unset means untriaged.
 USER_STATUS_SAVED = "saved"
 USER_STATUS_APPLIED = "applied"
-USER_STATUSES = (USER_STATUS_RADAR, USER_STATUS_SAVED, USER_STATUS_APPLIED)
+USER_STATUSES = (USER_STATUS_SAVED, USER_STATUS_APPLIED)
 
-# Display names for the job form and the list filter, keyed by stored value.
-USER_STATUS_LABELS = {
-    USER_STATUS_RADAR: "On my radar",
+# "On my radar" is NOT a stored value: it is the umbrella for every mark that
+# means the user is tracking an opportunity at all, i.e. saved or applied. It
+# exists only as a filter, so the list can answer "what am I watching?" without
+# a third mark to keep in step. A URL queued on /import arrives saved, and so
+# lands on the radar; see ``routes_import.stage_urls``.
+RADAR_FILTER = "radar"
+RADAR_STATUSES = (USER_STATUS_SAVED, USER_STATUS_APPLIED)
+
+# The list's Status filter, in display order. Keyed by query-string value, which
+# is why the radar umbrella sits alongside the stored marks.
+STATUS_FILTERS = (RADAR_FILTER,) + USER_STATUSES
+STATUS_FILTER_LABELS = {
+    RADAR_FILTER: "On my radar",
     USER_STATUS_SAVED: "Saved",
     USER_STATUS_APPLIED: "Applied",
 }
@@ -111,11 +118,15 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         filters["state"] = "closed"
         echo["state"] = "closed"
 
-    # Narrow to one user_status, e.g. everything on my radar. An unrecognised
+    # Narrow by how the user marked the job. ``radar`` is the umbrella rather
+    # than a stored value, so it matches every tracked mark. An unrecognised
     # value is ignored rather than matched literally, so a stray query parameter
     # shows the full list instead of silently emptying it.
     user_status = request.args.get("user_status", "").strip().lower()
-    if user_status in USER_STATUSES:
+    if user_status == RADAR_FILTER:
+        filters["user_status"] = {"$in": list(RADAR_STATUSES)}
+        echo["user_status"] = RADAR_FILTER
+    elif user_status in USER_STATUSES:
         filters["user_status"] = user_status
         echo["user_status"] = user_status
 
@@ -197,8 +208,8 @@ def list_jobs():
         filters=echo,
         state_filter=echo.get("state", "all"),
         user_status_filter=echo.get("user_status", "all"),
-        user_statuses=USER_STATUSES,
-        user_status_labels=USER_STATUS_LABELS,
+        status_filters=STATUS_FILTERS,
+        status_filter_labels=STATUS_FILTER_LABELS,
     )
 
 

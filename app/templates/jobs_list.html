@@ -42,7 +42,8 @@
     </div>
 
     {# The two filter rows narrow together: state is about the posting, status is
-       about the user's own mark on it. #}
+       about the user's own mark on it. "On my radar" is the umbrella over the
+       marks, not one of them. #}
     <div style="margin-bottom: 1rem;">
       Status:
       {% if user_status_filter == 'all' %}
@@ -51,12 +52,12 @@
         <a style="margin-right: 0.5rem;"
            href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">All</a>
       {% endif %}
-      {% for opt in user_statuses %}
+      {% for opt in status_filters %}
         {% if user_status_filter == opt %}
-          <strong style="margin-right: 0.5rem;">{{ user_status_labels[opt] }}</strong>
+          <strong style="margin-right: 0.5rem;">{{ status_filter_labels[opt] }}</strong>
         {% else %}
           <a style="margin-right: 0.5rem;"
-             href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">{{ user_status_labels[opt] }}</a>
+             href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company')) }}">{{ status_filter_labels[opt] }}</a>
         {% endif %}
       {% endfor %}
     </div>
@@ -121,7 +122,7 @@
             <div class="meta">{{ job.keywords | join(', ') }}</div>
           {% endif %}
           {% if job.user_status %}
-            <div class="meta">Status: {{ user_status_labels.get(job.user_status, job.user_status) }}</div>
+            <div class="meta">Status: {{ status_filter_labels.get(job.user_status, job.user_status) }}</div>
           {% endif %}
         </div>
       {% endfor %}

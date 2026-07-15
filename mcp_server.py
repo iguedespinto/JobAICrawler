@@ -31,7 +31,7 @@ from pymongo import MongoClient
 
 from app import routes_targets
 from app.routes_import import STATUS_UNPROCESSED, parse_jobs, stage_jobs
-from app.routes_jobs import USER_STATUSES
+from app.routes_jobs import RADAR_FILTER, RADAR_STATUSES, USER_STATUSES
 
 try:
     from mcp.server.fastmcp import FastMCP
@@ -253,9 +253,12 @@ def _build_job_filter(
         filt["state"] = {"$ne": "closed"}
     elif state == "closed":
         filt["state"] = "closed"
-    # Mirrors the web list's filter. An unrecognised value is ignored rather
-    # than matched literally, so a typo returns everything, not nothing.
-    if user_status in VALID_USER_STATUS:
+    # Mirrors the web list's filter: ``radar`` is the umbrella over every
+    # tracked mark rather than a stored value. An unrecognised value is ignored
+    # rather than matched literally, so a typo returns everything, not nothing.
+    if user_status == RADAR_FILTER:
+        filt["user_status"] = {"$in": list(RADAR_STATUSES)}
+    elif user_status in VALID_USER_STATUS:
         filt["user_status"] = user_status
     if company:
         filt["company"] = {"$regex": re.escape(company), "$options": "i"}
@@ -301,8 +304,8 @@ def find_jobs_in_db(
     - ``company``: case-insensitive substring on company.
     - ``keyword``: exact (case-insensitive) match against the keywords array.
     - ``state``: 'open' or 'closed' to narrow by state (default: all).
-    - ``user_status``: 'radar', 'saved' or 'applied' to narrow by how the user
-      marked the job (default: all).
+    - ``user_status``: 'saved' or 'applied' to narrow by the user's mark, or
+      'radar' for either of them ("on my radar") (default: all).
     - ``page``: 1-based page number.
     - ``limit``: page size (1-100), newest first.
     """
@@ -330,10 +333,11 @@ def update_job_status_in_db(
 ) -> Dict[str, Any]:
     """Change a job's state (open/closed) and/or set user_status.
 
-    ``state`` accepts 'open' or 'closed'. ``user_status`` accepts 'radar',
-    'saved', 'applied', or 'none'/'clear' (to unset); the values are mutually
-    exclusive, so setting one replaces the last. Raises ValueError / InvalidId
-    on bad input or missing job.
+    ``state`` accepts 'open' or 'closed'. ``user_status`` accepts 'saved',
+    'applied', or 'none'/'clear' (to unset); the values are mutually exclusive,
+    so setting one replaces the last. There is no 'radar' mark — that is a
+    filter meaning saved or applied. Raises ValueError / InvalidId on bad input
+    or missing job.
     """
     oid = ObjectId(job_id)  # raises InvalidId for malformed ids
 
@@ -382,8 +386,8 @@ def find_jobs(
         state: 'open' or 'closed' to narrow by state (default: all states).
         page: 1-based page number (use with total_pages / has_more to iterate).
         limit: Page size (1-100), newest first.
-        user_status: How the user marked the job — 'radar' (on my radar),
-            'saved' or 'applied' (default: all).
+        user_status: How the user marked the job — 'saved' or 'applied', or
+            'radar' for either ("on my radar") (default: all).
 
     Returns the page of jobs plus pagination metadata (total, page, limit,
     total_pages, has_more). Each job has an id to use with update_job_status.
@@ -427,8 +431,9 @@ def update_job_status(
     Args:
         job_id: The job's id (from find_jobs).
         state: 'closed' to close (mark no longer open), 'open' to reopen.
-        user_status: 'radar' (on my radar), 'saved', 'applied', or 'none' to
-            clear. Mutually exclusive — setting one replaces the last. Optional.
+        user_status: 'saved', 'applied', or 'none' to clear. Mutually exclusive
+            — setting one replaces the last. Optional. (There is no 'radar'
+            mark: that is a find_jobs filter meaning saved or applied.)
 
     At least one of state / user_status must be provided. Returns the
     updated job summary.

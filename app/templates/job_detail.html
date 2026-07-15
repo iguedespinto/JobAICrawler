@@ -71,12 +71,12 @@
       <div class="section">
         <h2>Track this opportunity</h2>
         <p class="meta">
-          One mark at a time: "On my radar" is something to watch, and setting
-          another replaces it. URLs queued on the Import page start on the radar.
+          Saved or Applied both put an opportunity <strong>on your radar</strong>,
+          which is how the list groups them. One mark at a time: setting another
+          replaces it. URLs queued on the Import page arrive Saved.
         </p>
         <form method="post" action="{{ url_for('jobs.save_job', job_id=job.id) }}">
           <select name="user_status">
-            <option value="radar" {% if job.user_status == 'radar' %}selected{% endif %}>On my radar</option>
             <option value="saved" {% if job.user_status == 'saved' %}selected{% endif %}>Saved</option>
             <option value="applied" {% if job.user_status == 'applied' %}selected{% endif %}>Applied</option>
             <option value="none" {% if not job.user_status %}selected{% endif %}>None</option>

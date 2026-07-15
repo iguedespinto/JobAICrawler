@@ -289,10 +289,22 @@ def test_edit_job_route_updates_fields(app_client, monkeypatch):
     assert job["state"] == "closed"
 
 
-# ── "On my radar" (a user_status value) ──────────────────────────────
+# ── "On my radar" (a filter, not a stored status) ────────────────────
 
 
-def test_save_job_accepts_radar(app_client, monkeypatch):
+def _radar_db():
+    return FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Saved Role", "user_status": "saved"},
+            {"_id": ObjectId(), "title": "Applied Role", "user_status": "applied"},
+            {"_id": ObjectId(), "title": "Untouched Role"},
+        ],
+        profiles=[],
+    )
+
+
+def test_save_job_has_no_radar_status(app_client, monkeypatch):
+    """Radar is not something a job can be set to -- only saved/applied/none."""
     job_id = ObjectId()
     fake_db = FakeDB(
         jobs=[{"_id": job_id, "title": "Role", "company": "Acme"}],
@@ -303,11 +315,11 @@ def test_save_job_accepts_radar(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    response = app_client.post(f"/jobs/{job_id}/save", data={"user_status": "radar"})
-    assert response.status_code == 302
-    assert fake_db.jobs.find_one({"_id": job_id})["user_status"] == "radar"
+    assert "radar" not in routes_jobs.USER_STATUSES
 
-    # Radar is one value of the field, so the others still replace it.
+    app_client.post(f"/jobs/{job_id}/save", data={"user_status": "saved"})
+    assert fake_db.jobs.find_one({"_id": job_id})["user_status"] == "saved"
+
     app_client.post(f"/jobs/{job_id}/save", data={"user_status": "applied"})
     assert fake_db.jobs.find_one({"_id": job_id})["user_status"] == "applied"
 
@@ -315,11 +327,11 @@ def test_save_job_accepts_radar(app_client, monkeypatch):
     assert fake_db.jobs.find_one({"_id": job_id})["user_status"] is None
 
 
-def test_job_detail_offers_radar_option(app_client, monkeypatch):
+def test_job_detail_form_offers_no_radar_option(app_client, monkeypatch):
     job_id = ObjectId()
     fake_db = FakeDB(
         jobs=[{"_id": job_id, "title": "Role", "company": "Acme",
-               "user_status": "radar"}],
+               "user_status": "saved"}],
         profiles=[],
     )
 
@@ -328,49 +340,47 @@ def test_job_detail_offers_radar_option(app_client, monkeypatch):
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
     body = app_client.get(f"/jobs/{job_id}").data.decode("utf-8")
-    assert 'value="radar"' in body
-    assert "On my radar" in body
+    assert 'value="radar"' not in body
+    assert 'value="saved"' in body and 'value="applied"' in body
 
 
-def test_jobs_list_user_status_filter(app_client, monkeypatch):
-    fake_db = FakeDB(
-        jobs=[
-            {"_id": ObjectId(), "title": "Radar Role", "user_status": "radar"},
-            {"_id": ObjectId(), "title": "Saved Role", "user_status": "saved"},
-            {"_id": ObjectId(), "title": "Untouched Role"},
-        ],
-        profiles=[],
-    )
+def test_jobs_list_radar_filter_means_saved_or_applied(app_client, monkeypatch):
+    fake_db = _radar_db()
 
     import app.routes_jobs as routes_jobs
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    # Default: no user_status filter, everything shows.
+    # Default: no filter, everything shows.
     body = app_client.get("/jobs").data.decode("utf-8")
-    assert "Radar Role" in body and "Saved Role" in body and "Untouched Role" in body
+    assert "Saved Role" in body and "Applied Role" in body and "Untouched Role" in body
 
-    radar_only = app_client.get("/jobs?user_status=radar").data.decode("utf-8")
-    assert "Radar Role" in radar_only
-    assert "Saved Role" not in radar_only and "Untouched Role" not in radar_only
+    # Radar is the umbrella: both marks, and nothing untriaged.
+    radar = app_client.get("/jobs?user_status=radar").data.decode("utf-8")
+    assert "Saved Role" in radar and "Applied Role" in radar
+    assert "Untouched Role" not in radar
 
-    saved_only = app_client.get("/jobs?user_status=saved").data.decode("utf-8")
-    assert "Saved Role" in saved_only and "Radar Role" not in saved_only
+    # The individual marks still narrow to one.
+    saved = app_client.get("/jobs?user_status=saved").data.decode("utf-8")
+    assert "Saved Role" in saved
+    assert "Applied Role" not in saved and "Untouched Role" not in saved
+
+    applied = app_client.get("/jobs?user_status=applied").data.decode("utf-8")
+    assert "Applied Role" in applied and "Saved Role" not in applied
 
     # An unrecognised value is ignored rather than silently narrowing the list.
     bogus = app_client.get("/jobs?user_status=bogus").data.decode("utf-8")
-    assert "Radar Role" in bogus and "Untouched Role" in bogus
+    assert "Saved Role" in bogus and "Untouched Role" in bogus
 
 
-def test_jobs_list_user_status_filter_combines_with_state(app_client, monkeypatch):
+def test_jobs_list_radar_filter_combines_with_state(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[
-            {"_id": ObjectId(), "title": "Open Radar", "user_status": "radar",
+            {"_id": ObjectId(), "title": "Open Saved", "user_status": "saved",
              "state": "open"},
-            {"_id": ObjectId(), "title": "Closed Radar", "user_status": "radar",
+            {"_id": ObjectId(), "title": "Closed Applied", "user_status": "applied",
              "state": "closed"},
-            {"_id": ObjectId(), "title": "Open Applied", "user_status": "applied",
-             "state": "open"},
+            {"_id": ObjectId(), "title": "Open Untouched", "state": "open"},
         ],
         profiles=[],
     )
@@ -379,8 +389,20 @@ def test_jobs_list_user_status_filter_combines_with_state(app_client, monkeypatc
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    # Both filters narrow together: state excludes the closed one, user_status
-    # excludes the applied one.
+    # Both filters narrow together: state excludes the closed one, radar
+    # excludes the untriaged one.
     body = app_client.get("/jobs?user_status=radar&state=open").data.decode("utf-8")
-    assert "Open Radar" in body
-    assert "Closed Radar" not in body and "Open Applied" not in body
+    assert "Open Saved" in body
+    assert "Closed Applied" not in body and "Open Untouched" not in body
+
+
+def test_jobs_list_offers_the_radar_filter(app_client, monkeypatch):
+    fake_db = _radar_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+    assert "On my radar" in body
+    assert "user_status=radar" in body

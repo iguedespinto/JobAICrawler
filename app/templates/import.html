@@ -70,7 +70,8 @@
       retrieves, validates and imports them, at which point they become viewable
       opportunities. URLs are reduced to their base (query/tracking parameters
       are stripped), and search/results-page URLs are rejected. Queuing a URL
-      here marks the resulting opportunity <strong>On my radar</strong>.</p>
+      here marks the resulting opportunity <strong>Saved</strong>, putting it on
+      your radar.</p>
     <form method="post" action="{{ url_for('import_jobs.add_urls') }}">
       <textarea name="urls" rows="4" style="width: 100%; box-sizing: border-box;"
                 placeholder="https://example.com/jobs/123&#10;https://example.com/jobs/456"></textarea>
