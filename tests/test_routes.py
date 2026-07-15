@@ -527,6 +527,49 @@ def test_jobs_list_drops_previous_next_pagination(app_client, monkeypatch):
     assert "Page 1 of" not in body
 
 
+def _linked_db():
+    return FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "With Link", "company": "Acme",
+             "url": "https://example.com/jobs/1"},
+            {"_id": ObjectId(), "title": "No Link", "company": "Beta"},
+        ],
+        profiles=[],
+    )
+
+
+def test_jobs_list_card_links_straight_to_the_posting(app_client, monkeypatch):
+    fake_db = _linked_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+
+    assert 'href="https://example.com/jobs/1"' in body
+    assert 'target="_blank"' in body
+    # Opening a posting must not hand it the referrer or a live window.opener.
+    assert 'rel="noopener noreferrer"' in body
+    # The job with no URL simply carries no link -- no empty href, no "n/a".
+    assert body.count('class="job-link"') == 1
+    assert 'href=""' not in body
+
+
+def test_jobs_list_partial_cards_carry_the_posting_link(app_client, monkeypatch):
+    """Cards appended while scrolling must have the link too, not just the first page."""
+    fake_db = _linked_db()
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs?partial=1").data.decode("utf-8")
+
+    assert 'href="https://example.com/jobs/1"' in body
+    assert 'class="job-link"' in body
+
+
 def test_jobs_list_paging_is_stable_across_tied_timestamps(app_client, monkeypatch):
     """A whole import batch shares one created_at, so the sort needs a tie-break.
 

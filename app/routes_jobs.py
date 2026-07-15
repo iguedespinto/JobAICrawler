@@ -199,6 +199,7 @@ def list_jobs():
                 "title": job.get("title"),
                 "company": job.get("company"),
                 "location": job.get("location"),
+                "url": job.get("url"),
                 "salary": job.get("salary"),
                 "keywords": job.get("keywords", []),
                 "status": job.get("status"),
