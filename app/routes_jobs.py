@@ -27,6 +27,30 @@ _BLOCK_BOUNDARY_RE = re.compile(r"(?i)<\s*/?(br|/?p|/?li|/?h[1-6]|/?div|/?ul|/?o
 
 jobs_bp = Blueprint("jobs", __name__, url_prefix="/jobs")
 
+# The user's relationship to an opportunity, held in a single ``user_status``
+# field. The values are mutually exclusive — setting one replaces the last — and
+# unset means untriaged.
+USER_STATUS_SAVED = "saved"
+USER_STATUS_APPLIED = "applied"
+USER_STATUSES = (USER_STATUS_SAVED, USER_STATUS_APPLIED)
+
+# "On my radar" is NOT a stored value: it is the umbrella for every mark that
+# means the user is tracking an opportunity at all, i.e. saved or applied. It
+# exists only as a filter, so the list can answer "what am I watching?" without
+# a third mark to keep in step. A URL queued on /import arrives saved, and so
+# lands on the radar; see ``routes_import.stage_urls``.
+RADAR_FILTER = "radar"
+RADAR_STATUSES = (USER_STATUS_SAVED, USER_STATUS_APPLIED)
+
+# The list's Status filter, in display order. Keyed by query-string value, which
+# is why the radar umbrella sits alongside the stored marks.
+STATUS_FILTERS = (RADAR_FILTER,) + USER_STATUSES
+STATUS_FILTER_LABELS = {
+    RADAR_FILTER: "On my radar",
+    USER_STATUS_SAVED: "Saved",
+    USER_STATUS_APPLIED: "Applied",
+}
+
 
 def _parse_pagination() -> Tuple[int, int]:
     """Parse pagination params from the query string."""
@@ -94,6 +118,18 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         filters["state"] = "closed"
         echo["state"] = "closed"
 
+    # Narrow by how the user marked the job. ``radar`` is the umbrella rather
+    # than a stored value, so it matches every tracked mark. An unrecognised
+    # value is ignored rather than matched literally, so a stray query parameter
+    # shows the full list instead of silently emptying it.
+    user_status = request.args.get("user_status", "").strip().lower()
+    if user_status == RADAR_FILTER:
+        filters["user_status"] = {"$in": list(RADAR_STATUSES)}
+        echo["user_status"] = RADAR_FILTER
+    elif user_status in USER_STATUSES:
+        filters["user_status"] = user_status
+        echo["user_status"] = user_status
+
     return filters, echo
 
 
@@ -116,8 +152,8 @@ def _parse_job_id(job_id: str):
 def _normalize_user_status(raw_value: str) -> Optional[str]:
     """Normalize user_status input into stored values."""
     normalized = raw_value.strip().lower()
-    if normalized not in {"saved", "applied", "none"}:
-        normalized = "saved"
+    if normalized not in set(USER_STATUSES) | {"none"}:
+        normalized = USER_STATUS_SAVED
     if normalized == "none":
         return None
     return normalized
@@ -171,6 +207,9 @@ def list_jobs():
         total_pages=total_pages,
         filters=echo,
         state_filter=echo.get("state", "all"),
+        user_status_filter=echo.get("user_status", "all"),
+        status_filters=STATUS_FILTERS,
+        status_filter_labels=STATUS_FILTER_LABELS,
     )
 
 

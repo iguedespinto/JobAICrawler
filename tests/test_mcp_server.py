@@ -113,6 +113,37 @@ def test_update_job_status_validates():
         mcp_server.update_job_status_in_db(db, str(ObjectId()), state="closed")  # not found
 
 
+def test_update_job_status_rejects_radar_as_a_status():
+    """Radar is a filter, not something a job can be set to."""
+    db = _jobs_db()
+    job = db.jobs.find_one({"title": "Backend Engineer"})
+
+    with pytest.raises(ValueError):
+        mcp_server.update_job_status_in_db(db, str(job["_id"]), user_status="radar")
+
+
+def test_find_jobs_radar_filter_means_saved_or_applied():
+    db = _jobs_db()
+    backend = db.jobs.find_one({"title": "Backend Engineer"})
+    mcp_server.update_job_status_in_db(db, str(backend["_id"]), user_status="saved")
+    frontend = db.jobs.find_one({"title": "Frontend Engineer"})
+    mcp_server.update_job_status_in_db(db, str(frontend["_id"]), user_status="applied")
+
+    # Radar is the umbrella over both marks; the untouched closed job is out.
+    on_radar = mcp_server.find_jobs_in_db(db, user_status="radar")
+    assert {j["title"] for j in on_radar} == {"Backend Engineer", "Frontend Engineer"}
+    assert mcp_server.count_jobs_in_db(db, user_status="radar") == 2
+
+    # The individual marks still narrow to one.
+    assert {j["title"] for j in mcp_server.find_jobs_in_db(db, user_status="saved")} == {
+        "Backend Engineer"
+    }
+
+    # Combines with the other filters rather than replacing them.
+    assert mcp_server.find_jobs_in_db(db, user_status="radar", state="closed") == []
+    assert mcp_server.count_jobs_in_db(db, user_status="radar", company="acme") == 1
+
+
 def test_find_jobs_pagination_covers_all_without_overlap():
     jobs = [
         {"_id": ObjectId(), "title": f"Job {i}", "company": "Acme", "keywords": ["Python"]}

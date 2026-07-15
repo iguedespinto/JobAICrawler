@@ -40,6 +40,7 @@ from flask import (
 
 from . import get_db
 from .crawlers.base import BaseCrawler
+from .routes_jobs import USER_STATUS_SAVED
 
 import_bp = Blueprint("import_jobs", __name__, url_prefix="/import")
 
@@ -504,6 +505,12 @@ def stage_urls(db, urls: List[str], source: Optional[str] = None) -> Dict[str, i
     inserted. An MCP client retrieves these via ``find_pending_urls``, enriches
     them and imports a file, which promotes them to ``staged``.
 
+    Queuing a URL by hand is itself an expression of interest, so each record is
+    marked ``user_status: saved``. The mark survives promotion (``stage_jobs``
+    rewrites only the described fields) and is applied to the job on commit, so
+    a URL pasted here arrives in the list already saved — and therefore on the
+    user's radar, which is the umbrella over saved and applied.
+
     Returns ``{"added", "skipped", "invalid"}`` — skipped: already known;
     invalid: malformed or a non-identifying search/results URL.
     """
@@ -542,6 +549,7 @@ def stage_urls(db, urls: List[str], source: Optional[str] = None) -> Dict[str, i
             {
                 "url": text,
                 "status": STATUS_UNPROCESSED,
+                "user_status": USER_STATUS_SAVED,
                 "source_file": source,
                 "staged_at": now,
             }
@@ -745,6 +753,13 @@ def commit():
         )
         external_id = BaseCrawler.hash_external_id(IMPORT_SITE, external_id_source)
 
+        # A record queued as a bare URL arrives saved (see ``stage_urls``). Only
+        # apply it when the job is created: an existing job's user_status is the
+        # user's own, so a re-import must not knock it back from applied.
+        set_on_insert: Dict[str, Any] = {"status": STATUS_IMPORTED, "created_at": now}
+        if job.get("user_status"):
+            set_on_insert["user_status"] = job["user_status"]
+
         result = db.jobs.update_one(
             {"site": IMPORT_SITE, "external_id": external_id},
             {
@@ -761,7 +776,7 @@ def commit():
                     "external_id": external_id,
                     "updated_at": now,
                 },
-                "$setOnInsert": {"status": STATUS_IMPORTED, "created_at": now},
+                "$setOnInsert": set_on_insert,
             },
             upsert=True,
         )
