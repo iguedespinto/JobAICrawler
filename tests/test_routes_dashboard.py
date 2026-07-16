@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from bson import ObjectId
 
 from app import routes_dashboard
@@ -133,3 +135,20 @@ def test_dashboard_route_renders(app_client, monkeypatch):
     assert "Python" in body
     # Default scope counts all 4 jobs (incl. the closed one): Python is in 3.
     assert "75.0%" in body
+
+
+def test_dashboard_table_links_both_the_keyword_and_its_count(app_client, monkeypatch):
+    """The keyword and the count are two ways to ask the same question.
+
+    Both cells lead to the opportunities behind the row, so the whole row reads
+    as one link rather than making you find the number to click.
+    """
+    fake_db = _db()
+    monkeypatch.setattr(routes_dashboard, "get_db", lambda: fake_db)
+
+    body = app_client.get("/dashboard").data.decode("utf-8")
+
+    # Both anchors point at the same filtered list; matched on href and label
+    # rather than the exact tag, so adding an attribute doesn't fail the test.
+    links = re.findall(r'<a href="([^"]+)"[^>]*>\s*(Python|3)\s*</a>', body)
+    assert sorted(links) == [("/jobs?keyword=Python", "3"), ("/jobs?keyword=Python", "Python")]

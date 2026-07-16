@@ -264,7 +264,8 @@
     <h2 class="section-title" style="margin-top: 2.25rem;">Every keyword</h2>
     <p class="hint" style="margin-bottom: 0.75rem;">A keyword's count is the
       number of opportunities that list it; the share is its slice of the
-      {{ total_jobs }} counted above. Click a count to see those opportunities.</p>
+      {{ total_jobs }} counted above. Click a keyword or its count to see those
+      opportunities.</p>
     <div class="table-wrap kw-table">
       <table class="data">
         <thead>
@@ -277,7 +278,14 @@
         <tbody>
           {% for row in rows %}
             <tr data-keyword="{{ row.keyword }}">
-              <td draggable="true" class="kw-draggable" data-keyword="{{ row.keyword }}">{{ row.keyword }}</td>
+              {# draggable="false" on the link keeps the cell the drag source: an
+                 anchor is a drag source by default, and dragging one drags its
+                 URL, which would take the merge gesture away from the text that
+                 fills the cell. Refused there, the drag falls to the td. #}
+              <td draggable="true" class="kw-draggable" data-keyword="{{ row.keyword }}">
+                <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
+                   draggable="false" title="Show these opportunities">{{ row.keyword }}</a>
+              </td>
               <td class="num">
                 <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
                    title="Show these opportunities">{{ row.count }}</a>
