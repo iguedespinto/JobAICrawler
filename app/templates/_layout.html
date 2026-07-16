@@ -1,0 +1,70 @@
+{# Shared shell. Every page extends this: one nav, one stylesheet, one voice.
+   Blocks — title (browser tab), eyebrow/page_title/lede (the page head),
+   head (per-page <style>), content, scripts. #}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Job AI Crawler{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <div class="shell">
+      <nav class="rail" aria-label="Sections">
+        <a class="rail__mark" href="{{ url_for('jobs.list_jobs') }}">
+          Job AI <span>Crawler</span>
+        </a>
+
+        {# aria-current does double duty: it styles the active link and tells a
+           screen reader where it is. Matched on endpoint, not on a passed-in
+           flag, so a new page can never forget to light its own tab. #}
+        {% set nav = [
+          ('jobs.list_jobs', 'Opportunities'),
+          ('dashboard.view_dashboard', 'Keywords'),
+          ('import_jobs.import_form', 'Import'),
+          ('keywords.manage_keywords', 'Groups'),
+          ('targets.manage_targets', 'Targets'),
+          ('profile.get_profile', 'Profile'),
+        ] %}
+        <div class="rail__nav">
+          {% for endpoint, label in nav %}
+            <a class="rail__link" href="{{ url_for(endpoint) }}"
+               {% if request.endpoint == endpoint %}aria-current="page"{% endif %}>{{ label }}</a>
+          {% endfor %}
+        </div>
+
+        <div class="rail__foot">
+          Opportunities are gathered<br />outside and imported here.
+        </div>
+      </nav>
+
+      <main class="main">
+        <div class="main__inner">
+          {% block page_head %}
+            <header class="page-head">
+              {% block eyebrow %}{% endblock %}
+              <h1 class="page-title">{% block page_title %}{% endblock %}</h1>
+              {% block lede %}{% endblock %}
+            </header>
+          {% endblock %}
+
+          {% with messages = get_flashed_messages() %}
+            {% if messages %}
+              {% for message in messages %}
+                <div class="flash">{{ message }}</div>
+              {% endfor %}
+            {% endif %}
+          {% endwith %}
+
+          {% block content %}{% endblock %}
+        </div>
+      </main>
+    </div>
+    {% block scripts %}{% endblock %}
+  </body>
+</html>

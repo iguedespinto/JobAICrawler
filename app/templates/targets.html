@@ -1,144 +1,146 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Target Companies &amp; Roles</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; }
-      .nav a { margin-right: 1rem; }
-      .flash { background: #fff3cd; border: 1px solid #ffe69c; padding: 0.75rem; margin-bottom: 1rem; }
-      .cols { display: flex; flex-wrap: wrap; gap: 2rem; }
-      .col { flex: 1; min-width: 280px; }
-      ul.targets { list-style: none; padding: 0; margin: 0.5rem 0; max-width: 420px; }
-      ul.targets li { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;
-                      border: 1px solid #ddd; padding: 0.4rem 0.6rem; margin-bottom: 0.3rem; }
-      .btn-delete { background: #e74c3c; color: #fff; border: none; }
-      .btn-delete:hover { background: #c0392b; }
-      .target-name { cursor: pointer; }
-      .target-name:hover { text-decoration: underline; }
-      .target-actions { display: flex; gap: 0.3rem; align-items: center; }
-      .icon { width: 15px; height: 15px; display: block; }
-      .icon-btn { display: inline-flex; align-items: center; justify-content: center;
-                  padding: 0.3rem 0.4rem; border-radius: 3px; cursor: pointer; line-height: 0; }
-      /* Inline edit: the edit form is hidden until the row is toggled. */
-      ul.targets li .target-edit { display: none; }
-      ul.targets li.editing .target-name,
-      ul.targets li.editing .target-actions { display: none; }
-      ul.targets li.editing .target-edit { display: flex; gap: 0.3rem; align-items: center; flex: 1; }
-      .target-input { flex: 1; padding: 0.3rem; font: inherit; }
-      .add-form input[type="text"] { padding: 0.4rem; width: 60%; }
-      .empty { color: #999; font-style: italic; }
-      .suggestions-section { margin-top: 2.5rem; }
-      table.suggestions { border-collapse: collapse; max-width: 640px; margin-top: 0.5rem; }
-      table.suggestions th, table.suggestions td { border: 1px solid #ddd; padding: 0.4rem 0.6rem; text-align: left; }
-      table.suggestions th { background: #f2f2f2; }
-      .suggestion-actions { display: flex; gap: 0.3rem; }
-      .suggestions-bulk { margin-top: 0.75rem; }
-    </style>
-  </head>
-  <body>
-    <!-- Icon sprite: monochrome glyphs inherit each button's colour. -->
-    <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
-      <symbol id="ic-edit" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M11.5 2.2l2.3 2.3L6 12.3l-3 .7.7-3z" />
-      </symbol>
-      <symbol id="ic-trash" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M2.5 4h11M6 4V2.5h4V4M4.2 4l.6 9.5h6.4l.6-9.5M6.5 6.5v5M9.5 6.5v5" />
-      </symbol>
-      <symbol id="ic-check" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M3 8.5l3.5 3.5L13 4" />
-      </symbol>
-      <symbol id="ic-cross" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4 4l8 8M12 4l-8 8" />
-      </symbol>
-      <symbol id="ic-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-              stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M8 3v10M3 8h10" />
-      </symbol>
-    </svg>
+{% extends "_layout.html" %}
 
-    <div class="nav">
-      <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
-      <a href="{{ url_for('dashboard.view_dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('import_jobs.import_form') }}">Import</a>
-      <a href="{{ url_for('keywords.manage_keywords') }}">Keywords</a>
-      <a href="{{ url_for('targets.manage_targets') }}">Targets</a>
-      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
-    </div>
+{% block title %}Targets · Job AI Crawler{% endblock %}
+{% block page_title %}Targets{% endblock %}
+{% block lede %}
+  <p class="page-lede">The companies, roles, search sites and other factors you're
+    aiming at. The MCP server reads these, so searches focus on them.</p>
+{% endblock %}
 
-    <h1>Targets</h1>
-    <p>Companies, roles, search sites and other relevant factors you are
-       targeting. These are read by the MCP server so searches can focus on them.</p>
+{% block head %}
+  <style>
+    .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; }
 
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        {% for message in messages %}
-          <div class="flash">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+    .col h2 {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.6rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--rule);
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .col h2 .count { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 500; color: var(--ink-faint); }
 
-    <div class="cols">
-      {% for section in sections %}
-        <div class="col">
-          <h2>{{ section.title }}</h2>
-          {% if section.entries %}
-            <ul class="targets">
-              {% for item in section.entries %}
-                <li>
-                  <span class="target-name">{{ item.name }}</span>
-                  <form class="target-edit" method="post"
-                        action="{{ url_for('targets.edit_target_route') }}">
+    ul.targets { list-style: none; padding: 0; margin: 0 0 0.6rem; }
+    ul.targets li {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 1px solid var(--rule);
+      padding: 0.35rem 0;
+    }
+    ul.targets li:hover { background: var(--pine-wash); }
+    .target-name { cursor: text; font-size: 0.875rem; flex: 1; min-width: 0; word-break: break-word; }
+    .target-name:hover { color: var(--pine); }
+    /* Faint until wanted, but never hidden: a touch device gets no hover, and
+       the controls still have to be findable. */
+    .target-actions { display: flex; gap: 0.25rem; align-items: center; opacity: 0.4; }
+    ul.targets li:hover .target-actions,
+    ul.targets li:focus-within .target-actions { opacity: 1; }
+
+    /* Inline edit: the edit form is hidden until the row is toggled. */
+    ul.targets li .target-edit { display: none; }
+    ul.targets li.editing .target-name,
+    ul.targets li.editing .target-actions { display: none; }
+    ul.targets li.editing .target-edit { display: flex; gap: 0.25rem; align-items: center; flex: 1; }
+    .target-input { flex: 1; min-width: 0; }
+
+    .add-form { display: flex; gap: 0.4rem; }
+    .add-form input[type="text"] { flex: 1; min-width: 0; }
+
+    .suggestion-actions { display: flex; gap: 0.3rem; }
+    .suggestions-bulk { margin-top: 0.75rem; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  <!-- Icon sprite: monochrome glyphs inherit each button's colour. -->
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true" focusable="false">
+    <symbol id="ic-edit" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11.5 2.2l2.3 2.3L6 12.3l-3 .7.7-3z" />
+    </symbol>
+    <symbol id="ic-trash" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.5 4h11M6 4V2.5h4V4M4.2 4l.6 9.5h6.4l.6-9.5M6.5 6.5v5M9.5 6.5v5" />
+    </symbol>
+    <symbol id="ic-check" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 8.5l3.5 3.5L13 4" />
+    </symbol>
+    <symbol id="ic-cross" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </symbol>
+    <symbol id="ic-plus" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M8 3v10M3 8h10" />
+    </symbol>
+  </svg>
+
+  <div class="cols">
+    {% for section in sections %}
+      <div class="col panel">
+        <h2>{{ section.title }} <span class="count">{{ section.entries | length }}</span></h2>
+        {% if section.entries %}
+          <ul class="targets">
+            {% for item in section.entries %}
+              <li>
+                <span class="target-name">{{ item.name }}</span>
+                <form class="target-edit" method="post"
+                      action="{{ url_for('targets.edit_target_route') }}">
+                  <input type="hidden" name="id" value="{{ item.id }}" />
+                  <input type="text" name="name" value="{{ item.name }}" class="target-input"
+                         autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" />
+                  <button type="submit" class="icon-btn btn-save" title="Save" aria-label="Save">
+                    <svg class="icon"><use href="#ic-check" /></svg>
+                  </button>
+                  <button type="button" class="icon-btn btn-cancel" title="Cancel" aria-label="Cancel">
+                    <svg class="icon"><use href="#ic-cross" /></svg>
+                  </button>
+                </form>
+                <span class="target-actions">
+                  <button type="button" class="icon-btn btn-edit" title="Edit" aria-label="Edit {{ item.name }}">
+                    <svg class="icon"><use href="#ic-edit" /></svg>
+                  </button>
+                  <form method="post" action="{{ url_for('targets.delete_target_route') }}"
+                        style="display: inline;"
+                        onsubmit="return confirm('Remove &quot;{{ item.name }}&quot;?');">
                     <input type="hidden" name="id" value="{{ item.id }}" />
-                    <input type="text" name="name" value="{{ item.name }}" class="target-input"
-                           autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" />
-                    <button type="submit" class="icon-btn btn-save" title="Save" aria-label="Save">
-                      <svg class="icon"><use href="#ic-check" /></svg>
-                    </button>
-                    <button type="button" class="icon-btn btn-cancel" title="Cancel" aria-label="Cancel">
-                      <svg class="icon"><use href="#ic-cross" /></svg>
+                    <button type="submit" class="icon-btn btn-delete" title="Remove" aria-label="Remove {{ item.name }}">
+                      <svg class="icon"><use href="#ic-trash" /></svg>
                     </button>
                   </form>
-                  <span class="target-actions">
-                    <button type="button" class="icon-btn btn-edit" title="Edit" aria-label="Edit">
-                      <svg class="icon"><use href="#ic-edit" /></svg>
-                    </button>
-                    <form method="post" action="{{ url_for('targets.delete_target_route') }}"
-                          style="display: inline;"
-                          onsubmit="return confirm('Remove &quot;{{ item.name }}&quot;?');">
-                      <input type="hidden" name="id" value="{{ item.id }}" />
-                      <button type="submit" class="icon-btn btn-delete" title="Remove" aria-label="Remove">
-                        <svg class="icon"><use href="#ic-trash" /></svg>
-                      </button>
-                    </form>
-                  </span>
-                </li>
-              {% endfor %}
-            </ul>
-          {% else %}
-            <p class="empty">No target {{ section.title | lower }} yet.</p>
-          {% endif %}
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="hint" style="margin-bottom: 0.6rem;">Nothing here yet.</p>
+        {% endif %}
 
-          <form method="post" action="{{ url_for('targets.add_target_route') }}" class="add-form">
-            <input type="hidden" name="kind" value="{{ section.kind }}" />
-            <input type="text" name="name" placeholder="Add a {{ section.kind | replace('_', ' ') }}…"
-                   autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" />
-            <button type="submit">Add</button>
-          </form>
-        </div>
-      {% endfor %}
-    </div>
+        <form method="post" action="{{ url_for('targets.add_target_route') }}" class="add-form">
+          <input type="hidden" name="kind" value="{{ section.kind }}" />
+          <input type="text" name="name" placeholder="Add a {{ section.kind | replace('_', ' ') }}…"
+                 aria-label="Add a {{ section.kind | replace('_', ' ') }}"
+                 autocomplete="off" data-1p-ignore data-lpignore="true" data-form-type="other" />
+          <button type="submit" class="btn btn-secondary">Add</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
 
-    <div class="suggestions-section">
-      <h2>Suggestions</h2>
-      <p>New targets suggested by the MCP client. Add the ones you want to the
-         matching list, or discard them.</p>
-      {% if suggestions %}
-        <table class="suggestions">
+  <section style="margin-top: 2.25rem;">
+    <h2 class="section-title">Suggestions</h2>
+    <p class="hint" style="margin-bottom: 0.75rem;">New targets proposed by the MCP
+      client. Add the ones you want to the matching list, or discard them.</p>
+    {% if suggestions %}
+      <div class="table-wrap" style="max-width: 640px;">
+        <table class="data">
           <thead>
             <tr><th>Name</th><th>Type</th><th></th></tr>
           </thead>
@@ -146,19 +148,19 @@
             {% for s in suggestions %}
               <tr>
                 <td>{{ s.name }}</td>
-                <td>{{ s.type_label }}</td>
+                <td class="mono">{{ s.type_label }}</td>
                 <td class="suggestion-actions">
                   <form method="post" action="{{ url_for('targets.accept_suggestion_route') }}">
                     <input type="hidden" name="id" value="{{ s.id }}" />
                     <button type="submit" class="icon-btn btn-add"
-                            title="Add to {{ s.type_label }}" aria-label="Add to targets">
+                            title="Add to {{ s.type_label }}" aria-label="Add {{ s.name }} to targets">
                       <svg class="icon"><use href="#ic-plus" /></svg>
                     </button>
                   </form>
                   <form method="post" action="{{ url_for('targets.discard_suggestion_route') }}">
                     <input type="hidden" name="id" value="{{ s.id }}" />
                     <button type="submit" class="icon-btn btn-delete"
-                            title="Discard" aria-label="Discard suggestion">
+                            title="Discard" aria-label="Discard {{ s.name }}">
                       <svg class="icon"><use href="#ic-trash" /></svg>
                     </button>
                   </form>
@@ -167,21 +169,24 @@
             {% endfor %}
           </tbody>
         </table>
-        {# Bulk discard for a queue that arrives faster than it is reviewed.
-           Confirmed first, like the clears on the import page: it drops every
-           row at once, and there is no undo. Accepted targets are unaffected,
-           and the MCP client can suggest these names again. #}
-        <div class="suggestions-bulk">
-          <form method="post" action="{{ url_for('targets.clear_suggestions_route') }}"
-                onsubmit="return confirm('Discard all {{ suggestions | length }} suggestion{{ '' if suggestions | length == 1 else 's' }}? Targets you have already added are kept.');">
-            <button type="submit" class="btn-delete">Discard all {{ suggestions | length }}</button>
-          </form>
-        </div>
-      {% else %}
-        <p class="empty">No suggestions right now.</p>
-      {% endif %}
-    </div>
+      </div>
+      {# Bulk discard for a queue that arrives faster than it is reviewed.
+         Confirmed first, like the clears on the import page: it drops every
+         row at once, and there is no undo. Accepted targets are unaffected,
+         and the MCP client can suggest these names again. #}
+      <div class="suggestions-bulk">
+        <form method="post" action="{{ url_for('targets.clear_suggestions_route') }}"
+              onsubmit="return confirm('Discard all {{ suggestions | length }} suggestion{{ '' if suggestions | length == 1 else 's' }}? Targets you have already added are kept.');">
+          <button type="submit" class="btn btn-danger">Discard all {{ suggestions | length }}</button>
+        </form>
+      </div>
+    {% else %}
+      <p class="empty">No suggestions right now.</p>
+    {% endif %}
+  </section>
+{% endblock %}
 
+{% block scripts %}
     <script>
       // Inline edit: toggle a row into an editable input; Save submits, Cancel
       // reverts. Delegated so it covers every row in every section.
@@ -222,5 +227,4 @@
         }
       })();
     </script>
-  </body>
-</html>
+{% endblock %}

@@ -1,269 +1,315 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Dashboard</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; }
-      .nav a { margin-right: 1rem; }
-      .hint { color: #666; font-size: 0.9rem; }
-      .cloud {
-        border: 1px solid #eee;
-        background: #fafafa;
-        padding: 1.5rem;
-        margin: 1rem 0 2rem;
-        line-height: 2.4;
-        text-align: center;
-      }
-      .cloud span {
-        display: inline-block;
-        margin: 0 0.45rem;
-        color: #1f6feb;
-        white-space: nowrap;
-        cursor: pointer;
-      }
-      .cloud span:hover { text-decoration: underline; }
-      #kw-tip {
-        position: absolute;
-        z-index: 10;
-        display: none;
-        min-width: 160px;
-        padding: 0.5rem 0.7rem;
-        background: #fff;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-        font-size: 0.85rem;
-        color: #222;
-        pointer-events: none;
-      }
-      #kw-tip .kw-title {
-        font-weight: 700;
-        margin-bottom: 0.3rem;
-        word-break: break-word;
-      }
-      #kw-tip .kw-row { display: flex; justify-content: space-between; gap: 1rem; }
-      #kw-tip .kw-row span:last-child { color: #1f6feb; font-weight: 600; }
-      table { border-collapse: collapse; width: 100%; max-width: 720px; }
-      th, td { border: 1px solid #ddd; padding: 0.5rem 0.75rem; text-align: left; }
-      th { background: #f2f2f2; }
-      td.num, th.num { text-align: right; }
-      .bar {
-        background: #e6f0ff;
-        height: 0.5rem;
-        border-radius: 2px;
-        margin-top: 0.25rem;
-      }
-      tbody tr { transition: background-color 0.8s ease; }
-      tbody tr.row-highlight { background-color: #fff3a0; }
-      th.sortable { cursor: pointer; user-select: none; }
-      th.sortable:hover { background: #e0e0e0; }
-      th.sortable::after { content: " ⇅"; color: #aaa; font-size: 0.8em; }
-      th.sortable.asc::after { content: " ↑"; color: #1f6feb; }
-      th.sortable.desc::after { content: " ↓"; color: #1f6feb; }
-      .filters { margin: 1rem 0; }
-      .filters label { display: inline-block; margin-right: 1rem; color: #444; }
-      .filters input { width: 22rem; max-width: 100%; display: block; }
+{% extends "_layout.html" %}
 
-      /* Drag-and-drop states */
-      .cloud span[draggable="true"] { cursor: grab; }
-      .cloud span.dragging { opacity: 0.4; }
-      .cloud span.drop-target {
-        outline: 2px solid #1f6feb;
-        outline-offset: 2px;
-        border-radius: 3px;
-        background: #e6f0ff;
-      }
-      td.kw-draggable { cursor: grab; }
-      td.kw-draggable.dragging { opacity: 0.4; }
-      tr.drop-target td:first-child {
-        outline: 2px solid #1f6feb;
-        outline-offset: -2px;
-        background: #e6f0ff;
-      }
+{% block title %}Keywords · Job AI Crawler{% endblock %}
+{% block eyebrow %}
+  <div class="eyebrow">
+    {{ total_jobs }} {% if state != 'all' %}{{ state }} {% endif %}opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} · filtered{% endif %}
+  </div>
+{% endblock %}
+{% block page_title %}Keywords{% endblock %}
+{% block lede %}
+  <p class="page-lede">Every keyword across the postings you've gathered, and how
+    much of the market names it. Drag one keyword onto another — in the cloud or
+    the table — to merge them into a group.</p>
+{% endblock %}
 
-      /* Merge dialog */
-      .modal-overlay {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.45);
-        z-index: 100;
-        justify-content: center;
-        align-items: center;
-      }
-      .modal-overlay.open { display: flex; }
-      .modal {
-        background: #fff;
-        border-radius: 8px;
-        padding: 1.5rem 2rem;
-        max-width: 520px;
-        width: 90%;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.25);
-      }
-      .modal h2 { margin-top: 0; font-size: 1.15rem; }
-      .modal .merge-section { margin: 0.8rem 0; }
-      .modal .merge-section h3 { margin: 0 0 0.3rem; font-size: 0.95rem; color: #555; }
-      .modal .variant-tag {
-        display: inline-block;
-        background: #e6f0ff;
-        border-radius: 3px;
-        padding: 0.15rem 0.5rem;
-        margin: 0.15rem 0.2rem;
-        font-size: 0.85rem;
-      }
-      .modal .result-section {
-        background: #f0faf0;
-        border: 1px solid #b2dfb2;
-        border-radius: 4px;
-        padding: 0.6rem 0.8rem;
-        margin: 0.8rem 0;
-      }
-      .modal .result-section h3 { margin: 0 0 0.3rem; font-size: 0.95rem; color: #2a7a2a; }
-      .modal label { display: block; margin: 0.8rem 0 0.3rem; font-weight: 600; font-size: 0.95rem; }
-      .modal input[type="text"] {
-        width: 100%;
-        padding: 0.4rem 0.5rem;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        font-size: 1rem;
-        box-sizing: border-box;
-      }
-      .modal .btn-row { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.2rem; }
-      .modal button {
-        padding: 0.45rem 1.2rem;
-        border: none;
-        border-radius: 4px;
-        font-size: 0.95rem;
-        cursor: pointer;
-      }
-      .modal .btn-cancel { background: #e0e0e0; color: #333; }
-      .modal .btn-cancel:hover { background: #ccc; }
-      .modal .btn-merge { background: #1f6feb; color: #fff; }
-      .modal .btn-merge:hover { background: #1759c4; }
-    </style>
-  </head>
-  <body>
-    <div class="nav">
-      <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
-      <a href="{{ url_for('import_jobs.import_form') }}">Import</a>
-      <a href="{{ url_for('keywords.manage_keywords') }}">Keywords</a>
-      <a href="{{ url_for('targets.manage_targets') }}">Targets</a>
-      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
+{% block head %}
+  <style>
+    /* ── The cloud ───────────────────────────────────────────────────────
+       The hero: the shape of demand, at a glance, sized by frequency. Set in
+       the display face so the page opens with its subject rather than a stat.
+       ------------------------------------------------------------------- */
+    .cloud {
+      background: var(--surface);
+      border: 1px solid var(--rule);
+      border-radius: var(--radius);
+      padding: 2rem 1.75rem;
+      line-height: 2.2;
+      text-align: center;
+    }
+    .cloud span {
+      display: inline-block;
+      margin: 0 0.5rem;
+      font-family: var(--font-display);
+      letter-spacing: -0.02em;
+      color: var(--pine-deep);
+      white-space: nowrap;
+      cursor: grab;
+    }
+    .cloud span:hover { color: var(--oxblood); }
+
+    #kw-tip {
+      position: absolute;
+      z-index: 10;
+      display: none;
+      min-width: 168px;
+      padding: 0.55rem 0.7rem;
+      background: var(--ink);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: #e8ece9;
+      pointer-events: none;
+    }
+    #kw-tip .kw-title {
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+      word-break: break-word;
+    }
+    #kw-tip .kw-row { display: flex; justify-content: space-between; gap: 1.5rem; }
+    #kw-tip .kw-row span:first-child { color: #8fa39d; }
+    #kw-tip .kw-row span:last-child { font-weight: 600; }
+
+    /* ── Table ──────────────────────────────────────────────────────────── */
+    .kw-table { max-width: 760px; }
+    tbody tr { transition: background-color 0.8s ease; }
+    tbody tr.row-highlight { background-color: var(--amber-tint); }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: var(--pine); }
+    th.sortable::after { content: " ⇅"; color: var(--ink-faint); }
+    th.sortable.asc::after { content: " ↑"; color: var(--pine); }
+    th.sortable.desc::after { content: " ↓"; color: var(--pine); }
+    td.kw-draggable { cursor: grab; font-weight: 500; }
+    /* The measure needs room to be read as a ruler: ticks every 10% of a
+       narrow cell just look like noise. */
+    .pct-cell { width: 40%; min-width: 12rem; }
+
+    /* ── Drag-and-drop states ───────────────────────────────────────────── */
+    .cloud span.dragging, td.kw-draggable.dragging { opacity: 0.35; }
+    .cloud span.drop-target {
+      outline: 2px solid var(--pine);
+      outline-offset: 3px;
+      border-radius: 2px;
+      background: var(--pine-tint);
+    }
+    tr.drop-target td:first-child {
+      outline: 2px solid var(--pine);
+      outline-offset: -2px;
+      background: var(--pine-tint);
+    }
+
+    /* ── Merge dialog ───────────────────────────────────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(20, 32, 29, 0.5);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      padding: 1rem;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 16px 48px rgba(20, 32, 29, 0.3);
+    }
+    .modal h2 {
+      font-family: var(--font-display);
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.25rem;
+    }
+    .merge-pair { display: flex; gap: 0.75rem; align-items: stretch; margin: 1rem 0; }
+    .merge-side {
+      flex: 1;
+      min-width: 0;
+      background: var(--surface-sunk);
+      border: 1px solid var(--rule);
+      border-radius: var(--radius);
+      padding: 0.6rem 0.7rem;
+    }
+    .merge-side h3 {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+      margin-bottom: 0.3rem;
+    }
+    .merge-side strong { display: block; margin-bottom: 0.4rem; word-break: break-word; }
+    .merge-plus {
+      align-self: center;
+      font-family: var(--font-mono);
+      font-size: 1.1rem;
+      color: var(--ink-faint);
+    }
+    .modal .variant-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      background: var(--surface);
+      border: 1px solid var(--rule-strong);
+      border-radius: 2px;
+      padding: 0.05rem 0.35rem;
+      margin: 0.15rem 0.15rem 0 0;
+      font-size: 0.6875rem;
+    }
+    .result-section {
+      background: var(--pine-wash);
+      border: 1px solid var(--pine-tint);
+      border-radius: var(--radius);
+      padding: 0.6rem 0.7rem;
+      margin: 1rem 0;
+    }
+    .result-section h3 {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--pine);
+      margin-bottom: 0.3rem;
+    }
+    .result-section .variant-tag { border-color: var(--pine-tint); }
+    .modal label { display: block; margin: 1rem 0 0.3rem; font-weight: 600; font-size: 0.8125rem; }
+    .modal input[type="text"] { width: 100%; }
+    .modal .btn-row { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1.25rem; }
+
+    /* ── Filters ────────────────────────────────────────────────────────── */
+    .filters { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+    .filters label { display: block; font-size: 0.8125rem; font-weight: 600; }
+    .filters .facet__label { display: block; margin-bottom: 0.25rem; }
+    .filters input[type="text"] { width: 22rem; max-width: 100%; display: block; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  {% if cloud %}
+    <div class="cloud">
+      {% for item in cloud %}
+        <span style="font-size: {{ item.size }}px; font-weight: {{ item.weight }}; opacity: {{ item.opacity }};"
+              data-keyword="{{ item.keyword }}"
+              data-count="{{ item.count }}"
+              data-percent="{{ item.percent }}">{{ item.keyword }}</span>
+      {% endfor %}
     </div>
+    <div id="kw-tip">
+      <div class="kw-title"></div>
+      <div class="kw-row"><span>Opportunities</span><span class="kw-count"></span></div>
+      <div class="kw-row"><span>Share</span><span class="kw-percent"></span></div>
+    </div>
+  {% else %}
+    <p class="empty">No keywords yet.
+      <a href="{{ url_for('import_jobs.import_form') }}">Import some opportunities</a> to see what the market asks for.</p>
+  {% endif %}
 
-    <h1>Keyword Dashboard</h1>
-
-    <form method="get" action="{{ url_for('dashboard.view_dashboard') }}" class="filters">
-      <label>
-        Must contain
-        <input type="text" name="must" value="{{ must }}"
-               placeholder="comma,separated — all in title/description/keywords" />
-      </label>
-      <label>
-        Cannot contain
-        <input type="text" name="cannot" value="{{ cannot }}"
-               placeholder="comma,separated — none in keywords" />
-      </label>
-      <label>
-        Show
-        <select name="state">
-          <option value="all" {% if state == 'all' %}selected{% endif %}>All</option>
-          <option value="open" {% if state == 'open' %}selected{% endif %}>Open only</option>
-          <option value="closed" {% if state == 'closed' %}selected{% endif %}>Closed only</option>
-        </select>
-      </label>
-      <button type="submit">Apply</button>
-      {% if must or cannot or state != 'all' %}
-        <a href="{{ url_for('dashboard.view_dashboard') }}" style="margin-left: 0.5rem;">Clear</a>
-      {% endif %}
-    </form>
-
-    <p class="hint">
-      Based on {{ total_jobs }} {% if state == 'all' %}total{% else %}{{ state }}{% endif %} opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} matching the filters{% endif %}.
-      Each keyword's count is the number of opportunities that list it; the
-      percentage is its share of those opportunities.
-    </p>
-
-    {% if cloud %}
-      <div class="cloud">
-        {% for item in cloud %}
-          <span style="font-size: {{ item.size }}px; font-weight: {{ item.weight }}; opacity: {{ item.opacity }};"
-                data-keyword="{{ item.keyword }}"
-                data-count="{{ item.count }}"
-                data-percent="{{ item.percent }}">{{ item.keyword }}</span>
-        {% endfor %}
-      </div>
-      <div id="kw-tip">
-        <div class="kw-title"></div>
-        <div class="kw-row"><span>Opportunities</span><span class="kw-count"></span></div>
-        <div class="kw-row"><span>% of total</span><span class="kw-percent"></span></div>
-      </div>
-    {% else %}
-      <p>No keywords yet. Import some opportunities to populate the dashboard.</p>
+  <form method="get" action="{{ url_for('dashboard.view_dashboard') }}" class="panel filters"
+        style="margin-top: 1.25rem;">
+    <label>
+      <span class="facet__label">Must contain</span>
+      <input type="text" name="must" value="{{ must }}"
+             placeholder="comma,separated — all in title/description/keywords" />
+    </label>
+    <label>
+      <span class="facet__label">Cannot contain</span>
+      <input type="text" name="cannot" value="{{ cannot }}"
+             placeholder="comma,separated — none in keywords" />
+    </label>
+    <label>
+      <span class="facet__label">Show</span>
+      <select name="state">
+        <option value="all" {% if state == 'all' %}selected{% endif %}>All</option>
+        <option value="open" {% if state == 'open' %}selected{% endif %}>Open only</option>
+        <option value="closed" {% if state == 'closed' %}selected{% endif %}>Closed only</option>
+      </select>
+    </label>
+    <button type="submit" class="btn">Apply</button>
+    {% if must or cannot or state != 'all' %}
+      <a class="btn btn-secondary" style="text-decoration: none;"
+         href="{{ url_for('dashboard.view_dashboard') }}">Clear filters</a>
     {% endif %}
+  </form>
 
-    <!-- Merge dialog -->
-    <div class="modal-overlay" id="merge-overlay">
-      <div class="modal">
-        <h2>Merge Keywords</h2>
-        <div class="merge-section">
+  <!-- Merge dialog -->
+  <div class="modal-overlay" id="merge-overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="merge-heading">
+      <h2 id="merge-heading">Merge keywords</h2>
+      <p class="hint">The two keywords become one group. Every posting that named
+        either variant counts once, under the display name.</p>
+      <div class="merge-pair">
+        <div class="merge-side">
           <h3>Keyword A</h3>
           <strong id="merge-a-name"></strong>
           <div id="merge-a-variants"></div>
         </div>
-        <div class="merge-section">
+        <div class="merge-plus">+</div>
+        <div class="merge-side">
           <h3>Keyword B</h3>
           <strong id="merge-b-name"></strong>
           <div id="merge-b-variants"></div>
         </div>
-        <label for="merge-display">Display name</label>
-        <input type="text" id="merge-display" />
-        <div class="result-section">
-          <h3>Resulting group</h3>
-          <div id="merge-result-variants"></div>
-        </div>
-        <div class="btn-row">
-          <button class="btn-cancel" onclick="closeMerge()">Cancel</button>
-          <button class="btn-merge" onclick="confirmMerge()">Merge</button>
-        </div>
+      </div>
+      <label for="merge-display">Display name</label>
+      <input type="text" id="merge-display" />
+      <div class="result-section">
+        <h3>Resulting group</h3>
+        <div id="merge-result-variants"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-secondary btn-cancel" onclick="closeMerge()">Cancel</button>
+        <button class="btn btn-merge" onclick="confirmMerge()">Merge keywords</button>
       </div>
     </div>
+  </div>
 
-    {% if rows %}
-      <table>
+  {% if rows %}
+    <h2 class="section-title" style="margin-top: 2.25rem;">Every keyword</h2>
+    <p class="hint" style="margin-bottom: 0.75rem;">A keyword's count is the
+      number of opportunities that list it; the share is its slice of the
+      {{ total_jobs }} counted above. Click a keyword or its count to see those
+      opportunities.</p>
+    <div class="table-wrap kw-table">
+      <table class="data">
         <thead>
           <tr>
             <th class="sortable" data-sort="keyword">Keyword</th>
             <th class="num sortable desc" data-sort="count">Opportunities</th>
-            <th class="num sortable" data-sort="percent">% of total</th>
+            <th class="num sortable pct-cell" data-sort="percent">Share</th>
           </tr>
         </thead>
         <tbody>
           {% for row in rows %}
             <tr data-keyword="{{ row.keyword }}">
-              <td draggable="true" class="kw-draggable" data-keyword="{{ row.keyword }}">{{ row.keyword }}</td>
+              {# draggable="false" on the link keeps the cell the drag source: an
+                 anchor is a drag source by default, and dragging one drags its
+                 URL, which would take the merge gesture away from the text that
+                 fills the cell. Refused there, the drag falls to the td. #}
+              <td draggable="true" class="kw-draggable" data-keyword="{{ row.keyword }}">
+                <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
+                   draggable="false" title="Show these opportunities">{{ row.keyword }}</a>
+              </td>
               <td class="num">
                 <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
                    title="Show these opportunities">{{ row.count }}</a>
               </td>
-              <td class="num">
+              <td class="num pct-cell">
                 {{ row.percent }}%
-                <div class="bar" style="width: {{ row.percent }}%;"></div>
+                <div class="measure"><div class="measure__fill" style="width: {{ row.percent }}%;"></div></div>
               </td>
             </tr>
           {% endfor %}
         </tbody>
         <tfoot>
-          <tr style="font-weight: 700; background: #f2f2f2;">
-            <td>Total: {{ rows|length }} keywords</td>
-            <td class="num">{{ total_jobs }} opportunities</td>
+          <tr>
+            <td>{{ rows|length }} keywords</td>
+            <td class="num">{{ total_jobs }}</td>
             <td class="num"></td>
           </tr>
         </tfoot>
       </table>
-    {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
 
+{% block scripts %}
     <script>
       (function () {
         var tip = document.getElementById("kw-tip");
@@ -377,7 +423,7 @@
 
         window.confirmMerge = function () {
           var display = document.getElementById("merge-display").value.trim();
-          if (!display) { alert("Please enter a display name."); return; }
+          if (!display) { alert("Enter a display name for the group."); return; }
 
           fetch("/keywords/merge", {
             method: "POST",
@@ -401,10 +447,10 @@
                 }
                 location.reload();
               } else {
-                alert("Error: " + (data.error || "unknown"));
+                alert("The merge didn't go through: " + (data.error || "unknown reason"));
               }
             })
-            .catch(function (err) { alert("Request failed: " + err); });
+            .catch(function (err) { alert("The merge didn't go through: " + err); });
         };
 
         /* ── Wire up cloud spans ─────────────────────────── */
@@ -552,5 +598,4 @@
         }
       })();
     </script>
-  </body>
-</html>
+{% endblock %}
