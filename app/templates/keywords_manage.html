@@ -1,54 +1,39 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Keyword Groups</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; }
-      .nav a { margin-right: 1rem; }
-      table { border-collapse: collapse; width: 100%; max-width: 800px; }
-      th, td { border: 1px solid #ddd; padding: 0.5rem 0.75rem; text-align: left; }
-      th { background: #f2f2f2; }
-      .variants { color: #666; font-size: 0.9rem; }
-      .variant-tag {
-        display: inline-block;
-        background: #e6f0ff;
-        border-radius: 3px;
-        padding: 0.15rem 0.5rem;
-        margin: 0.15rem 0.2rem;
-        font-size: 0.85rem;
-      }
-      .btn-delete {
-        background: #e74c3c;
-        color: #fff;
-        border: none;
-        padding: 0.35rem 0.8rem;
-        border-radius: 3px;
-        cursor: pointer;
-        font-size: 0.85rem;
-      }
-      .btn-delete:hover { background: #c0392b; }
-      .empty { color: #999; font-style: italic; margin-top: 1rem; }
-    </style>
-  </head>
-  <body>
-    <div class="nav">
-      <a href="{{ url_for('jobs.list_jobs') }}">Jobs</a>
-      <a href="{{ url_for('dashboard.view_dashboard') }}">Dashboard</a>
-      <a href="{{ url_for('import_jobs.import_form') }}">Import</a>
-      <a href="{{ url_for('targets.manage_targets') }}">Targets</a>
-      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
-    </div>
+{% extends "_layout.html" %}
 
-    <h1>Keyword Groups</h1>
-    <p>Keyword groups merge multiple keyword variants under a single display name.
-       Drag and drop keywords in the <a href="{{ url_for('dashboard.view_dashboard') }}">Dashboard</a> word cloud to create new groups.</p>
+{% block title %}Keyword Groups · Job AI Crawler{% endblock %}
+{% block page_title %}Keyword Groups{% endblock %}
+{% block lede %}
+  <p class="page-lede">A group collects spellings of the same thing — <em>js</em>,
+    <em>JavaScript</em>, <em>ECMAScript</em> — under one display name, so the
+    <a href="{{ url_for('dashboard.view_dashboard') }}">keyword counts</a> stop
+    splitting one skill across three rows. Drag one keyword onto another in the
+    cloud to make a group.</p>
+{% endblock %}
 
-    {% if groups %}
-      <table>
+{% block head %}
+  <style>
+    .variant-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      background: var(--pine-wash);
+      color: var(--pine-deep);
+      border: 1px solid var(--pine-tint);
+      border-radius: 2px;
+      padding: 0.05rem 0.35rem;
+      margin: 0.1rem 0.15rem 0.1rem 0;
+      font-size: 0.6875rem;
+    }
+    .group-display { font-family: var(--font-display); font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.015em; }
+  </style>
+{% endblock %}
+
+{% block content %}
+  {% if groups %}
+    <div class="table-wrap" style="max-width: 800px;">
+      <table class="data">
         <thead>
           <tr>
-            <th>Display Name</th>
+            <th>Display name</th>
             <th>Variants</th>
             <th></th>
           </tr>
@@ -56,23 +41,27 @@
         <tbody>
           {% for g in groups %}
             <tr data-group-id="{{ g.id }}">
-              <td><strong>{{ g.display }}</strong></td>
-              <td class="variants">
+              <td><span class="group-display">{{ g.display }}</span></td>
+              <td>
                 {% for v in g.variants %}
                   <span class="variant-tag">{{ v }}</span>
                 {% endfor %}
               </td>
               <td>
-                <button class="btn-delete" onclick="deleteGroup('{{ g.id }}', '{{ g.display }}')">Delete</button>
+                <button class="btn btn-danger" onclick="deleteGroup('{{ g.id }}', '{{ g.display }}')">Delete</button>
               </td>
             </tr>
           {% endfor %}
         </tbody>
       </table>
-    {% else %}
-      <p class="empty">No keyword groups yet. Drag one keyword onto another in the Dashboard word cloud to create one.</p>
-    {% endif %}
+    </div>
+  {% else %}
+    <p class="empty">No keyword groups yet. Drag one keyword onto another in the
+      <a href="{{ url_for('dashboard.view_dashboard') }}">keyword cloud</a> to make one.</p>
+  {% endif %}
+{% endblock %}
 
+{% block scripts %}
     <script>
       function deleteGroup(id, name) {
         if (!confirm('Delete the group "' + name + '"?\n\nIts variants will appear as independent keywords again.')) return;
@@ -84,11 +73,10 @@
               if (row) row.remove();
               if (!document.querySelector('tbody tr')) location.reload();
             } else {
-              alert('Error: ' + (data.error || 'unknown'));
+              alert('The group was not deleted: ' + (data.error || 'unknown reason'));
             }
           })
-          .catch(function (err) { alert('Request failed: ' + err); });
+          .catch(function (err) { alert('The group was not deleted: ' + err); });
       }
     </script>
-  </body>
-</html>
+{% endblock %}

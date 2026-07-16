@@ -8,40 +8,54 @@
   {% if job.start_group %}
     <h2 class="group-head">{{ job.group_label }} <span class="group-count">({{ job.group_count }})</span></h2>
   {% endif %}
-  <div class="job">
-    <h3>
-      <a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a>
+  <div class="job{% if job.state == 'closed' %} is-closed{% endif %}">
+    <div class="job__head">
+      <h3 class="job__title">
+        <a href="{{ url_for('jobs.get_job', job_id=job.id) }}">{{ job.title }}</a>
+      </h3>
       <span class="badge {{ job.state }}">{{ job.state }}</span>
-    </h3>
-    <div class="meta">
-      {% if job.company %}
-        {# Keeps the current state, status and grouping scope, so filtering by
-           company neither surfaces roles those filters had excluded nor drops
-           you back into a flat list without saying so. #}
-        <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ job.company }}</a>
-      {% endif %}
-      {% if job.location %} · {{ job.location }}{% endif %}
     </div>
+
+    {% if job.company %}
+      {# Keeps the current state, status and grouping scope, so filtering by
+         company neither surfaces roles those filters had excluded nor drops
+         you back into a flat list without saying so. #}
+      <div class="job__company">
+        <a href="{{ url_for('jobs.list_jobs', company=job.company, state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ job.company }}</a>
+      </div>
+    {% endif %}
+
+    <div class="job__meta">
+      {% if job.location %}<div>{{ job.location }}</div>{% endif %}
+      {% if job.salary %}<div><strong>{{ job.salary }}</strong></div>{% endif %}
+      <div>Added {{ job.created_at or "n/a" }}</div>
+    </div>
+
+    {% if job.keywords %}
+      <div class="job__keywords">
+        {% for keyword in job.keywords %}<span class="tag">{{ keyword }}</span>{% endfor %}
+      </div>
+    {% endif %}
+
     {# Straight to the posting, so reading the list doesn't mean opening each job
        first. A plain new-tab link on purpose: cards arrive by fetch as you
        scroll, and this keeps working without a handler being bound to them. #}
-    {% if job.url %}
-      <div class="meta">
-        {# The arrow marks this as leaving the site: it sits right under the
-           company link, which merely filters the list. #}
-        <a href="{{ job.url }}" target="_blank" rel="noopener noreferrer"
-           class="job-link">Job link ↗</a>
+    {# A job with neither a link nor a mark has nothing to put here, so the
+       footer rule doesn't get drawn under an empty row. #}
+    {% if job.url or job.user_status %}
+      <div class="job__foot">
+        {# The arrow marks this as leaving the site: the company link above
+           merely filters the list. #}
+        {% if job.url %}
+          <a href="{{ job.url }}" target="_blank" rel="noopener noreferrer"
+             class="job-link">Job link ↗</a>
+        {% else %}
+          <span></span>
+        {% endif %}
+        {% if job.user_status %}
+          <span class="mark">{{ status_filter_labels.get(job.user_status, job.user_status) }}</span>
+        {% endif %}
       </div>
-    {% endif %}
-    <div class="meta">Added: {{ job.created_at or "n/a" }}</div>
-    {% if job.salary %}
-      <div class="meta">Salary: {{ job.salary }}</div>
-    {% endif %}
-    {% if job.keywords %}
-      <div class="meta">{{ job.keywords | join(', ') }}</div>
-    {% endif %}
-    {% if job.user_status %}
-      <div class="meta">Status: {{ status_filter_labels.get(job.user_status, job.user_status) }}</div>
     {% endif %}
   </div>
 {% endfor %}

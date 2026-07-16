@@ -1,133 +1,222 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>{{ job.title }}</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; }
-      .meta { color: #666; font-size: 0.9rem; }
-      .section { margin-top: 2rem; }
-      .tag { display: inline-block; margin-right: 0.5rem; padding: 0.2rem 0.5rem; background: #f2f2f2; }
-      .badge { font-size: 0.8rem; padding: 0.1rem 0.45rem; border-radius: 3px; color: #fff; }
-      .badge.open { background: #00695c; }
-      .badge.closed { background: #37474f; }
-      .edit-form label { display: block; margin-bottom: 0.75rem; font-weight: bold; max-width: 640px; }
-      .edit-form label .meta, .field-label .meta { font-weight: normal; }
-      .edit-form input, .edit-form textarea { display: block; width: 100%; box-sizing: border-box; margin-top: 0.2rem; padding: 0.4rem; font: inherit; }
-      .field { max-width: 640px; margin-bottom: 0.75rem; }
-      .field-label { font-weight: bold; }
-      .rt-toolbar { margin: 0.2rem 0; }
-      .rt-toolbar button { margin-right: 0.25rem; padding: 0.2rem 0.5rem; }
-      .rich-editor { border: 1px solid #ccc; padding: 0.5rem; min-height: 8rem; margin-top: 0.2rem; }
-      .rich-editor:focus { outline: 2px solid #00695c; }
-      .rich-editor ul, .rich-editor ol, .rich-content ul, .rich-content ol { margin: 0.5rem 0 0.5rem 1.5rem; }
-      .rich-content p, .rich-editor p { margin: 0.5rem 0; }
-    </style>
-  </head>
-  <body>
-    <a href="{{ url_for('jobs.list_jobs') }}">← Back to list</a>
+{% extends "_layout.html" %}
 
-    {% set st = job.state or 'open' %}
+{% block title %}{{ job.title }} · Job AI Crawler{% endblock %}
 
-    <!-- READ MODE: read-only display, no edit fields. -->
-    <div id="read-view">
-      <div class="section" style="margin-top: 1rem;">
-        <button type="button" id="edit-btn">Edit</button>
-      </div>
+{% set st = job.state or 'open' %}
 
-      <h1>{{ job.title }}</h1>
-      <div class="meta">{{ job.company }} · {{ job.location }}</div>
-      <div class="meta">State: <span class="badge {{ st }}">{{ st }}</span></div>
-      {% if job.url %}
-        <div class="meta"><a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">Job link</a></div>
-      {% else %}
-        <div class="meta">Job link: n/a</div>
-      {% endif %}
+{% block head %}
+  <style>
+    .backlink {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--ink-muted);
+      text-decoration: none;
+      margin-bottom: 1.25rem;
+    }
+    .backlink:hover { color: var(--pine); }
 
-      {% if job.salary %}
-        <div class="meta">Salary: {{ job.salary }}</div>
-      {% endif %}
+    .job-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1.5rem; }
+    .job-head__where { margin-top: 0.5rem; font-size: 1rem; color: var(--ink-muted); }
+    .job-head__where strong { color: var(--ink); font-weight: 600; }
 
-      <div class="section">
-        <h2>Keywords</h2>
-        {% if job.keywords %}
-          {% for keyword in job.keywords %}
-            <span class="tag">{{ keyword }}</span>
-          {% endfor %}
-        {% else %}
-          <span class="meta">n/a</span>
-        {% endif %}
-      </div>
+    .facts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 2rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--rule);
+    }
+    .fact__label {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--ink-faint);
+    }
+    .fact__value { font-family: var(--font-mono); font-size: 0.8125rem; }
 
-      <div class="section">
-        <h2>Description</h2>
-        {% if job.description_html %}
-          <div class="rich-content">{{ job.description_html | safe }}</div>
-        {% else %}
-          <p style="white-space: pre-line;">{{ job.description_text }}</p>
-        {% endif %}
-      </div>
+    .cols { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 1.25rem; align-items: start; }
+    @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
 
-      <div class="section">
-        <h2>Track this opportunity</h2>
-        <p class="meta">
-          Saved or Applied both put an opportunity <strong>on your radar</strong>,
-          which is how the list groups them. One mark at a time: setting another
-          replaces it. URLs queued on the Import page arrive Saved.
-        </p>
-        <form method="post" action="{{ url_for('jobs.save_job', job_id=job.id) }}">
-          <select name="user_status">
-            <option value="saved" {% if job.user_status == 'saved' %}selected{% endif %}>Saved</option>
-            <option value="applied" {% if job.user_status == 'applied' %}selected{% endif %}>Applied</option>
-            <option value="none" {% if not job.user_status %}selected{% endif %}>None</option>
-          </select>
-          <button type="submit">Update</button>
-        </form>
-      </div>
+    .rich-content { font-size: 0.9375rem; line-height: 1.65; }
+    .rich-content ul, .rich-content ol, .rich-editor ul, .rich-editor ol { margin: 0.5rem 0 0.5rem 1.5rem; }
+    .rich-content p, .rich-editor p { margin: 0.5rem 0; }
 
-      <div class="section">
-        <h2>State</h2>
-        <p class="meta">
-          {% if st == 'closed' %}
-            This opportunity is closed (no longer accepting applications).
-          {% else %}
-            This opportunity is open.
-          {% endif %}
-          All jobs are compared against when matching imports, regardless of state.
-        </p>
-        <form method="post" action="{{ url_for('jobs.set_job_state', job_id=job.id) }}">
-          {% if st == 'closed' %}
-            <input type="hidden" name="state" value="open" />
-            <button type="submit">Reopen</button>
-          {% else %}
-            <input type="hidden" name="state" value="closed" />
-            <button type="submit">Close</button>
-          {% endif %}
-        </form>
-      </div>
+    .side-card + .side-card { margin-top: 1rem; }
+    .side-card h2 {
+      font-family: var(--font-display);
+      font-size: 0.9375rem;
+      letter-spacing: -0.015em;
+      margin-bottom: 0.35rem;
+    }
+    .side-card form { margin-top: 0.75rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .side-card select { flex: 1; min-width: 8rem; }
 
-      {% if job.url %}
-        <div class="section">
-          <h2>Job posting</h2>
-          <p class="meta">
-            Some job sites block embedding; if the preview below is blank,
-            <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">open it in a new window</a>.
-          </p>
-          <iframe
-            src="{{ job.url }}"
-            title="Job posting"
-            loading="lazy"
-            referrerpolicy="no-referrer"
-            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-            style="width: 100%; height: 80vh; border: 1px solid #ddd;"></iframe>
+    /* Edit mode */
+    .edit-form label { display: block; margin-bottom: 0.85rem; font-weight: 600; font-size: 0.8125rem; max-width: 640px; }
+    .edit-form label .meta, .field-label .meta { font-weight: 400; color: var(--ink-faint); }
+    .edit-form input, .edit-form textarea { display: block; width: 100%; margin-top: 0.2rem; }
+    .field { max-width: 640px; margin-bottom: 0.85rem; }
+    .field-label { font-weight: 600; font-size: 0.8125rem; }
+    .rt-toolbar { display: flex; gap: 0.25rem; margin: 0.3rem 0; }
+    .rt-toolbar button {
+      font: inherit;
+      font-size: 0.75rem;
+      padding: 0.2rem 0.5rem;
+      border: 1px solid var(--rule-strong);
+      border-radius: 2px;
+      background: var(--surface);
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .rt-toolbar button:hover { background: var(--pine-wash); border-color: var(--pine); }
+    .rich-editor {
+      background: var(--surface);
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius);
+      padding: 0.6rem;
+      min-height: 10rem;
+      font-size: 0.9375rem;
+      line-height: 1.6;
+    }
+    .rich-editor:focus { outline: none; border-color: var(--pine); box-shadow: 0 0 0 3px var(--pine-tint); }
+
+    .preview-frame { width: 100%; height: 80vh; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--surface); }
+  </style>
+{% endblock %}
+
+{# This page's head is the posting itself, not a generic title bar. #}
+{% block page_head %}{% endblock %}
+
+{% block content %}
+  <a href="{{ url_for('jobs.list_jobs') }}" class="backlink">← All opportunities</a>
+
+  <!-- READ MODE: read-only display, no edit fields. -->
+  <div id="read-view">
+    <div class="panel">
+      <div class="job-head">
+        <div>
+          <div class="eyebrow">
+            <span class="badge {{ st }}">{{ st }}</span>
+            {% if job.user_status %}
+              <span class="mark">{{ job.user_status }}</span>
+            {% endif %}
+          </div>
+          <h1 class="page-title">{{ job.title }}</h1>
+          <div class="job-head__where">
+            <strong>{{ job.company }}</strong>{% if job.location %} · {{ job.location }}{% endif %}
+          </div>
         </div>
-      {% endif %}
+        <button type="button" id="edit-btn" class="btn btn-secondary">Edit</button>
+      </div>
+
+      <div class="facts">
+        <div>
+          <div class="fact__label">Salary</div>
+          <div class="fact__value">{{ job.salary or '—' }}</div>
+        </div>
+        <div>
+          <div class="fact__label">Posting</div>
+          <div class="fact__value">
+            {% if job.url %}
+              <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">Open ↗</a>
+            {% else %}
+              —
+            {% endif %}
+          </div>
+        </div>
+      </div>
     </div>
 
-    <!-- EDIT MODE: only editable fields, hidden until Edit is clicked. -->
-    <div id="edit-view" style="display: none;">
-      <h1>Edit opportunity</h1>
-      <p class="meta">Edit any field and save. Available for open and closed opportunities.</p>
+    <div class="cols" style="margin-top: 1.25rem;">
+      <div class="stack">
+        <div class="panel">
+          <h2 class="section-title">Description</h2>
+          {% if job.description_html %}
+            <div class="rich-content">{{ job.description_html | safe }}</div>
+          {% else %}
+            <p class="rich-content" style="white-space: pre-line;">{{ job.description_text }}</p>
+          {% endif %}
+        </div>
+
+        {% if job.keywords %}
+          <div class="panel">
+            <h2 class="section-title">Keywords</h2>
+            {% for keyword in job.keywords %}
+              <span class="tag">{{ keyword }}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      <aside>
+        <div class="panel side-card">
+          <h2>Track this</h2>
+          <p class="hint">Saved or Applied both put an opportunity on your radar,
+            which is how the list groups them. One mark at a time: setting another
+            replaces it. URLs queued on the Import page arrive Saved.</p>
+          <form method="post" action="{{ url_for('jobs.save_job', job_id=job.id) }}">
+            <select name="user_status" aria-label="Your mark">
+              <option value="saved" {% if job.user_status == 'saved' %}selected{% endif %}>Saved</option>
+              <option value="applied" {% if job.user_status == 'applied' %}selected{% endif %}>Applied</option>
+              <option value="none" {% if not job.user_status %}selected{% endif %}>None</option>
+            </select>
+            <button type="submit" class="btn">Update</button>
+          </form>
+        </div>
+
+        <div class="panel side-card">
+          <h2>State</h2>
+          <p class="hint">
+            {% if st == 'closed' %}
+              Closed — no longer accepting applications. Closed opportunities are
+              still compared against when matching imports.
+            {% else %}
+              Open — accepting applications.
+            {% endif %}
+          </p>
+          <form method="post" action="{{ url_for('jobs.set_job_state', job_id=job.id) }}">
+            {% if st == 'closed' %}
+              <input type="hidden" name="state" value="open" />
+              <button type="submit" class="btn btn-secondary">Reopen</button>
+            {% else %}
+              <input type="hidden" name="state" value="closed" />
+              <button type="submit" class="btn btn-danger">Close</button>
+            {% endif %}
+          </form>
+        </div>
+      </aside>
+    </div>
+
+    {% if job.url %}
+      <div class="panel" style="margin-top: 1.25rem;">
+        <h2 class="section-title">The posting</h2>
+        <p class="hint" style="margin-bottom: 0.75rem;">
+          Some job sites block embedding. If the frame below stays blank,
+          <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">open the posting in its own window</a>.
+        </p>
+        <iframe
+          src="{{ job.url }}"
+          title="Job posting"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          class="preview-frame"></iframe>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- EDIT MODE: only editable fields, hidden until Edit is clicked. -->
+  <div id="edit-view" style="display: none;">
+    <div class="page-head">
+      <div class="eyebrow">Editing</div>
+      <h1 class="page-title">{{ job.title }}</h1>
+      <p class="page-lede">Change any field and save. Available for open and closed opportunities.</p>
+    </div>
+    <div class="panel">
       <form method="post" action="{{ url_for('jobs.edit_job', job_id=job.id) }}" class="edit-form" id="edit-form">
         <label>Title
           <input type="text" name="title" value="{{ job.title or '' }}" />
@@ -159,11 +248,16 @@
           <div id="desc-editor" class="rich-editor" contenteditable="true">{% if job.description_html %}{{ job.description_html | safe }}{% else %}{{ (job.description_text or '') | e | replace('\n', '<br>') | safe }}{% endif %}</div>
         </div>
         <input type="hidden" name="description_html" id="desc-html" />
-        <button type="submit">Save changes</button>
-        <button type="button" id="cancel-btn">Cancel</button>
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="submit" class="btn">Save changes</button>
+          <button type="button" id="cancel-btn" class="btn btn-secondary">Cancel</button>
+        </div>
       </form>
     </div>
+  </div>
+{% endblock %}
 
+{% block scripts %}
     <script>
       // Toggle between read mode and edit mode (two separate blocks) and drive
       // the rich-text description editor.
@@ -216,5 +310,4 @@
         });
       });
     </script>
-  </body>
-</html>
+{% endblock %}

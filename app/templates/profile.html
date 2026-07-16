@@ -1,64 +1,67 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Profile</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; }
-      label { display: block; margin-top: 1rem; }
-      textarea { width: 100%; height: 120px; }
-      input[type="text"] { width: 100%; }
-      .hint { color: #666; font-size: 0.9rem; }
-    </style>
-  </head>
-  <body>
-    <div style="margin-bottom: 1rem;">
-      <a href="{{ url_for('jobs.list_jobs') }}" style="margin-right: 1rem;">Jobs</a>
-      <a href="{{ url_for('dashboard.view_dashboard') }}" style="margin-right: 1rem;">Dashboard</a>
-      <a href="{{ url_for('import_jobs.import_form') }}" style="margin-right: 1rem;">Import</a>
-      <a href="{{ url_for('keywords.manage_keywords') }}" style="margin-right: 1rem;">Keywords</a>
-      <a href="{{ url_for('targets.manage_targets') }}">Targets</a>
-    </div>
-    <h1>Your Profile</h1>
-    <form method="post" action="{{ url_for('profile.update_profile') }}">
-      <label>
-        About you
-        <textarea name="about_you">{{ profile.get('about_you', '') }}</textarea>
-      </label>
+{% extends "_layout.html" %}
 
-      <label>
-        Skills (comma separated)
-        <input type="text" name="skills" value="{{ profile.get('skills', []) | join(', ') }}" />
-      </label>
+{% block title %}Profile · Job AI Crawler{% endblock %}
+{% block page_title %}Your profile{% endblock %}
+{% block lede %}
+  <p class="page-lede">Who you are and what you're looking for. This is the
+    context searches are run against.</p>
+{% endblock %}
 
-      <label>
-        Preferred locations (comma separated)
-        <input type="text" name="preferred_locations" value="{{ profile.get('preferred_locations', []) | join(', ') }}" />
-      </label>
+{% block head %}
+  <style>
+    .form-panel { max-width: 640px; }
+    /* display:block matters — a bare <label> is inline, and margin-bottom does
+       nothing on it. Wide enough that a field's hint clearly belongs to the
+       input above it rather than to the next field's label. */
+    .field { display: block; margin-bottom: 1.75rem; }
+    .field > span { display: block; margin-bottom: 0.25rem; }
+    .field textarea { width: 100%; height: 140px; }
+    .field input[type="text"] { width: 100%; }
+    .field .hint { margin-top: 0.25rem; }
+  </style>
+{% endblock %}
 
-      <label>
-        Remote preference
-        <input type="text" name="remote_preference" value="{{ profile.get('remote_preference', '') }}" />
-        <div class="hint">Example: remote | hybrid | onsite</div>
-      </label>
+{% block content %}
+  <form method="post" action="{{ url_for('profile.update_profile') }}" class="panel form-panel">
+    <label class="field">
+      <span class="facet__label">About you</span>
+      <textarea name="about_you" placeholder="What you do, what you're good at, what you want next">{{ profile.get('about_you', '') }}</textarea>
+    </label>
 
-      <label>
-        Target roles (comma separated)
-        <input type="text" name="target_roles" value="{{ profile.get('target_roles', []) | join(', ') }}" />
-      </label>
+    <label class="field">
+      <span class="facet__label">Skills</span>
+      <input type="text" name="skills" value="{{ profile.get('skills', []) | join(', ') }}"
+             placeholder="Python, Flask, MongoDB" />
+      <div class="hint">Comma separated.</div>
+    </label>
 
-      <label>
-        Target seniority
-        <input type="text" name="target_seniority" value="{{ profile.get('target_seniority', '') }}" />
-      </label>
+    <label class="field">
+      <span class="facet__label">Preferred locations</span>
+      <input type="text" name="preferred_locations" value="{{ profile.get('preferred_locations', []) | join(', ') }}"
+             placeholder="Lisbon, Berlin" />
+      <div class="hint">Comma separated.</div>
+    </label>
 
-      <button type="submit">Save Profile</button>
-    </form>
+    <label class="field">
+      <span class="facet__label">Remote preference</span>
+      <input type="text" name="remote_preference" value="{{ profile.get('remote_preference', '') }}"
+             placeholder="remote" />
+      <div class="hint">For example: remote, hybrid or onsite.</div>
+    </label>
 
-    <div style="margin-top: 2rem;">
-      <h2>Import Opportunities</h2>
-      <p>Opportunities are prepared externally and brought in as a JSON file.</p>
-      <a href="{{ url_for('import_jobs.import_form') }}">Go to import</a>
-    </div>
-  </body>
-</html>
+    <label class="field">
+      <span class="facet__label">Target roles</span>
+      <input type="text" name="target_roles" value="{{ profile.get('target_roles', []) | join(', ') }}"
+             placeholder="Backend Engineer, Platform Engineer" />
+      <div class="hint">Comma separated.</div>
+    </label>
+
+    <label class="field">
+      <span class="facet__label">Target seniority</span>
+      <input type="text" name="target_seniority" value="{{ profile.get('target_seniority', '') }}"
+             placeholder="Senior" />
+    </label>
+
+    <button type="submit" class="btn">Save profile</button>
+  </form>
+{% endblock %}

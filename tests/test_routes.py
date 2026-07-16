@@ -734,7 +734,7 @@ def test_jobs_list_offers_the_group_controls(app_client, monkeypatch):
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
     plain = app_client.get("/jobs").data.decode("utf-8")
-    assert "Group by:" in plain
+    assert "Group by" in plain
     assert "group=company" in plain
     # The order control is meaningless until grouped, so it stays hidden.
     assert "group_order=name" not in plain

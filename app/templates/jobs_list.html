@@ -1,115 +1,46 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Jobs</title>
-    <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; }
-      form { margin-bottom: 1.5rem; }
-      .jobs-grid { display: grid; gap: 1rem; grid-template-columns: 1fr; }
-      @media (min-width: 600px) { .jobs-grid { grid-template-columns: repeat(2, 1fr); } }
-      @media (min-width: 900px) { .jobs-grid { grid-template-columns: repeat(3, 1fr); } }
-      @media (min-width: 1200px) { .jobs-grid { grid-template-columns: repeat(4, 1fr); } }
-      .job { border: 1px solid #ddd; padding: 1rem; }
-      .meta { color: #666; font-size: 0.9rem; }
-      .badge { display: inline-block; font-size: 0.75rem; padding: 0.1rem 0.45rem; border-radius: 3px; color: #fff; vertical-align: middle; }
-      .badge.open { background: #00695c; }
-      .badge.closed { background: #37474f; }
-      .job-link { white-space: nowrap; }
-      /* The heading is a grid item like the cards, so span it across every
-         column to make it a band the row below belongs to. */
-      .group-head { grid-column: 1 / -1; margin: 1.25rem 0 0; padding-bottom: 0.3rem;
-                    border-bottom: 2px solid #00695c; font-size: 1.05rem; }
-      .group-head:first-child { margin-top: 0; }
-      .group-count { color: #666; font-weight: normal; font-size: 0.85rem; }
-      .load-more { margin-top: 1.5rem; text-align: center; }
-      .load-more a { display: inline-block; padding: 0.5rem 1.25rem; border: 1px solid #ddd; }
-      #scroll-status { margin-top: 0.75rem; text-align: center; }
-    </style>
-  </head>
-  <body>
-    <div style="margin-bottom: 1rem;">
-      <a href="{{ url_for('dashboard.view_dashboard') }}" style="margin-right: 1rem;">Dashboard</a>
-      <a href="{{ url_for('import_jobs.import_form') }}" style="margin-right: 1rem;">Import</a>
-      <a href="{{ url_for('keywords.manage_keywords') }}" style="margin-right: 1rem;">Keywords</a>
-      <a href="{{ url_for('targets.manage_targets') }}" style="margin-right: 1rem;">Targets</a>
-      <a href="{{ url_for('profile.get_profile') }}">Profile</a>
-    </div>
-    <h1>Opportunities</h1>
+{% extends "_layout.html" %}
 
-    <div style="margin-bottom: 1rem;">
-      Show:
-      {% for opt in ['all', 'open', 'closed'] %}
-        {% if state_filter == opt %}
-          <strong style="margin-right: 0.5rem;">{{ opt | capitalize }}</strong>
-        {% else %}
-          <a style="margin-right: 0.5rem;"
-             href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ opt | capitalize }}</a>
-        {% endif %}
-      {% endfor %}
-    </div>
+{% block title %}Opportunities · Job AI Crawler{% endblock %}
+{% block eyebrow %}<div class="eyebrow">{{ total }} gathered</div>{% endblock %}
+{% block page_title %}Opportunities{% endblock %}
 
-    {# Grouping reorders rather than narrows, so it sits below the filters and
-       carries them with it. The order control only appears once grouped: it has
-       nothing to say about a flat, date-ordered list. #}
-    <div style="margin-bottom: 1rem;">
-      Group by:
-      {% if not grouped %}
-        <strong style="margin-right: 0.5rem;">None</strong>
-      {% else %}
-        <a style="margin-right: 0.5rem;"
-           href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">None</a>
-      {% endif %}
-      {% if grouped %}
-        <strong style="margin-right: 0.5rem;">Company</strong>
-      {% else %}
-        <a style="margin-right: 0.5rem;"
-           href="{{ url_for('jobs.list_jobs', group='company', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">Company</a>
-      {% endif %}
+{% block head %}
+  <style>
+    .search { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .search input[type="text"] { flex: 1; min-width: 16rem; max-width: 26rem; }
+    .facet-row { margin-top: 0.9rem; }
+    .scope {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+      margin-top: 0.9rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--rule);
+      font-size: 0.8125rem;
+      color: var(--ink-muted);
+    }
+    .scope__pin {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: var(--pine-wash);
+      border: 1px solid var(--pine-tint);
+      border-radius: var(--radius);
+      padding: 0.2rem 0.5rem;
+    }
+    .scope__pin strong { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; }
+    .scope__pin a { color: var(--ink-faint); text-decoration: none; font-weight: 700; }
+    .scope__pin a:hover { color: var(--oxblood); }
+  </style>
+{% endblock %}
 
-      {% if grouped %}
-        <span style="margin-left: 1.5rem;">Order:</span>
-        {% for opt in group_orders %}
-          {% if group_order == opt %}
-            <strong style="margin-right: 0.5rem;">{{ group_order_labels[opt] }}</strong>
-          {% else %}
-            <a style="margin-right: 0.5rem;"
-               href="{{ url_for('jobs.list_jobs', group='company', group_order=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">{{ group_order_labels[opt] }}</a>
-          {% endif %}
-        {% endfor %}
-      {% endif %}
-    </div>
-
-    {# The two filter rows narrow together: state is about the posting, status is
-       about the user's own mark on it. "On my radar" is the umbrella over the
-       marks, not one of them. #}
-    <div style="margin-bottom: 1rem;">
-      Status:
-      {% if user_status_filter == 'all' %}
-        <strong style="margin-right: 0.5rem;">All</strong>
-      {% else %}
-        <a style="margin-right: 0.5rem;"
-           href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">All</a>
-      {% endif %}
-      {% for opt in status_filters %}
-        {% if user_status_filter == opt %}
-          <strong style="margin-right: 0.5rem;">{{ status_filter_labels[opt] }}</strong>
-        {% else %}
-          <a style="margin-right: 0.5rem;"
-             href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ status_filter_labels[opt] }}</a>
-        {% endif %}
-      {% endfor %}
-    </div>
-
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        {% for message in messages %}
-          <div style="background:#eafaf1;border:1px solid #b7e4c7;padding:0.75rem;margin-bottom:1rem;">{{ message }}</div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
-
-    <form method="get" action="{{ url_for('jobs.list_jobs') }}">
+{% block content %}
+  {# The controls are one instrument: search narrows, the facets below it scope,
+     and grouping reorders what is left. Keeping them in a single panel means
+     you can see the whole question you are asking at once. #}
+  <div class="panel" style="margin-bottom: 1.5rem;">
+    <form method="get" action="{{ url_for('jobs.list_jobs') }}" class="search">
       {% if filters.get('state') %}<input type="hidden" name="state" value="{{ filters.get('state') }}" />{% endif %}
       {% if filters.get('keyword') %}<input type="hidden" name="keyword" value="{{ filters.get('keyword') }}" />{% endif %}
       {% if filters.get('company') %}<input type="hidden" name="company" value="{{ filters.get('company') }}" />{% endif %}
@@ -117,50 +48,133 @@
       {% if filters.get('group') %}<input type="hidden" name="group" value="{{ filters.get('group') }}" />{% endif %}
       {% if filters.get('group_order') %}<input type="hidden" name="group_order" value="{{ filters.get('group_order') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
-             placeholder="Search title, keywords, description" style="width: 320px;" />
-      <button type="submit">Search</button>
+             placeholder="Search title, keywords, description" aria-label="Search opportunities" />
+      <button type="submit" class="btn">Search</button>
       {% if filters.get('q') %}
-        <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
-           style="margin-left: 0.5rem;">Clear</a>
+        <a class="btn btn-secondary"
+           href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
+           style="text-decoration: none;">Clear search</a>
       {% endif %}
     </form>
 
-    {% if filters.get('keyword') %}
-      <p style="margin-top: 0.75rem;">
-        Showing opportunities with keyword <strong>{{ filters.get('keyword') }}</strong>.
-        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">Clear keyword</a>
-      </p>
-    {% endif %}
+    <div class="facet-row">
+      <div class="facets">
+        {# State is about the posting; status is your own mark on it. They read
+           as two switches on the same panel because they narrow together. #}
+        <div class="facet">
+          <span class="facet__label">Posting</span>
+          <div class="segmented">
+            {% for opt in ['all', 'open', 'closed'] %}
+              {% if state_filter == opt %}
+                <strong>{{ opt | capitalize }}</strong>
+              {% else %}
+                <a href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ opt | capitalize }}</a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
 
-    {% if filters.get('company') %}
-      <p style="margin-top: 0.75rem;">
-        Showing opportunities at <strong>{{ filters.get('company') }}</strong>.
-        <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">Clear company</a>
-      </p>
-    {% endif %}
+        <div class="facet">
+          <span class="facet__label">Your mark</span>
+          <div class="segmented">
+            {% if user_status_filter == 'all' %}
+              <strong>All</strong>
+            {% else %}
+              <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">All</a>
+            {% endif %}
+            {% for opt in status_filters %}
+              {% if user_status_filter == opt %}
+                <strong>{{ status_filter_labels[opt] }}</strong>
+              {% else %}
+                <a href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ status_filter_labels[opt] }}</a>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </div>
 
-    {% if jobs %}
-      <div class="jobs-grid" id="jobs-grid">
-        {% include "_job_cards.html" %}
+        {# Grouping reorders rather than narrows, so it sits with the facets but
+           carries them with it. The order control only appears once grouped: it
+           has nothing to say about a flat, date-ordered list. #}
+        <div class="facet">
+          <span class="facet__label">Group by</span>
+          <div class="segmented">
+            {% if not grouped %}
+              <strong>None</strong>
+            {% else %}
+              <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">None</a>
+            {% endif %}
+            {% if grouped %}
+              <strong>Company</strong>
+            {% else %}
+              <a href="{{ url_for('jobs.list_jobs', group='company', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">Company</a>
+            {% endif %}
+          </div>
+        </div>
+
+        {% if grouped %}
+          <div class="facet">
+            <span class="facet__label">Order</span>
+            <div class="segmented">
+              {% for opt in group_orders %}
+                {% if group_order == opt %}
+                  <strong>{{ group_order_labels[opt] }}</strong>
+                {% else %}
+                  <a href="{{ url_for('jobs.list_jobs', group='company', group_order=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">{{ group_order_labels[opt] }}</a>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        {% endif %}
       </div>
-    {% else %}
-      <p>No jobs found.</p>
-    {% endif %}
+    </div>
 
-    {# The list loads as you scroll. The link below is the real fallback, not a
-       decoration: without JS (or if a fetch fails) it is an ordinary link to the
-       next page, and the script only takes it over once it knows it can. #}
-    {% if page < total_pages %}
-      <div class="load-more" id="load-more-wrap"
-           data-next-page="{{ page + 1 }}" data-total-pages="{{ total_pages }}">
-        <a id="load-more"
-           href="{{ url_for('jobs.list_jobs', page=page+1, per_page=per_page, **filters) }}">Load more</a>
+    {# A keyword or company scope came from somewhere else in the app, so it is
+       shown as a removable pin rather than hidden in the facet row. #}
+    {% if filters.get('keyword') or filters.get('company') %}
+      <div class="scope">
+        {% if filters.get('keyword') %}
+          <span class="scope__pin">
+            Keyword <strong>{{ filters.get('keyword') }}</strong>
+            <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
+               aria-label="Clear keyword filter" title="Clear keyword">×</a>
+          </span>
+        {% endif %}
+        {% if filters.get('company') %}
+          <span class="scope__pin">
+            Company <strong>{{ filters.get('company') }}</strong>
+            <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
+               aria-label="Clear company filter" title="Clear company">×</a>
+          </span>
+        {% endif %}
       </div>
     {% endif %}
+  </div>
 
-    <p class="meta" id="scroll-status"
-       data-total="{{ total }}">Showing {{ jobs | length }} of {{ total }} opportunities.</p>
+  {% if jobs %}
+    <div class="jobs-grid" id="jobs-grid">
+      {% include "_job_cards.html" %}
+    </div>
+  {% else %}
+    <p class="empty">No opportunities match these filters. Widen the search, or
+      <a href="{{ url_for('import_jobs.import_form') }}">import some</a>.</p>
+  {% endif %}
 
+  {# The list loads as you scroll. The link below is the real fallback, not a
+     decoration: without JS (or if a fetch fails) it is an ordinary link to the
+     next page, and the script only takes it over once it knows it can. #}
+  {% if page < total_pages %}
+    <div class="load-more" id="load-more-wrap"
+         data-next-page="{{ page + 1 }}" data-total-pages="{{ total_pages }}">
+      <a id="load-more" class="btn btn-secondary" style="text-decoration: none;"
+         href="{{ url_for('jobs.list_jobs', page=page+1, per_page=per_page, **filters) }}">Load more</a>
+    </div>
+  {% endif %}
+
+  <p id="scroll-status"
+     data-total="{{ total }}">Showing {{ jobs | length }} of {{ total }} opportunities.</p>
+{% endblock %}
+
+{% block scripts %}
     <script>
       // Infinite scroll: append the next page's cards when the sentinel nears
       // the viewport. Progressive enhancement — if anything here is missing or
@@ -254,5 +268,4 @@
         });
       })();
     </script>
-  </body>
-</html>
+{% endblock %}

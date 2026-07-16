@@ -127,7 +127,9 @@ def test_dashboard_route_renders(app_client, monkeypatch):
     response = app_client.get("/dashboard")
     assert response.status_code == 200
     body = response.data.decode("utf-8")
-    assert "Keyword Dashboard" in body
+    # The heading itself, not just the word: "Keywords" is also a nav label on
+    # every page, so a bare substring check would pass anywhere.
+    assert '<h1 class="page-title">Keywords</h1>' in body
     assert "Python" in body
     # Default scope counts all 4 jobs (incl. the closed one): Python is in 3.
     assert "75.0%" in body
