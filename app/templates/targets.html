@@ -189,42 +189,29 @@
 {% block scripts %}
     <script>
       // Inline edit: toggle a row into an editable input; Save submits, Cancel
-      // reverts. Delegated so it covers every row in every section.
-      document.addEventListener("click", function (e) {
-        // Use closest() so a click on the icon (svg/use) inside a button still
-        // resolves to the button. Clicking the entry name also enters edit mode.
-        var editTrigger = e.target.closest(".btn-edit, .target-name");
-        var cancelBtn = e.target.closest(".btn-cancel");
-        if (editTrigger) {
-          var li = editTrigger.closest("li");
-          li.classList.add("editing");
-          var input = li.querySelector(".target-input");
-          input.focus();
-          input.select();
-        } else if (cancelBtn) {
-          var row = cancelBtn.closest("li");
-          row.querySelector(".target-edit").reset();  // discard unsaved change
-          row.classList.remove("editing");
-        }
-      });
-
-      // Actions POST and reload; keep the user where they were instead of
-      // jumping to the top. Save the scroll position on submit, restore it as
-      // the reloaded page paints.
-      (function () {
-        var KEY = "targets-scroll-y";
-        if ("scrollRestoration" in history) history.scrollRestoration = "manual";
-        document.addEventListener("submit", function () {
-          try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+      // reverts. Delegated on document so it covers every row in every section —
+      // guarded so that re-running this script after an in-place update (see
+      // nav.js) doesn't bind a second handler. Actions keep the scroll position
+      // because nav.js swaps them in place; there is no reload to survive.
+      if (!window.__targetsEditBound) {
+        window.__targetsEditBound = true;
+        document.addEventListener("click", function (e) {
+          // Use closest() so a click on the icon (svg/use) inside a button still
+          // resolves to the button. Clicking the entry name also enters edit mode.
+          var editTrigger = e.target.closest(".btn-edit, .target-name");
+          var cancelBtn = e.target.closest(".btn-cancel");
+          if (editTrigger) {
+            var li = editTrigger.closest("li");
+            li.classList.add("editing");
+            var input = li.querySelector(".target-input");
+            input.focus();
+            input.select();
+          } else if (cancelBtn) {
+            var row = cancelBtn.closest("li");
+            row.querySelector(".target-edit").reset();  // discard unsaved change
+            row.classList.remove("editing");
+          }
         });
-        var saved = null;
-        try { saved = sessionStorage.getItem(KEY); } catch (e) {}
-        if (saved !== null) {
-          try { sessionStorage.removeItem(KEY); } catch (e) {}
-          var y = parseInt(saved, 10) || 0;
-          window.scrollTo(0, y);  // before first paint (script is end-of-body)
-          window.addEventListener("load", function () { window.scrollTo(0, y); });
-        }
-      })();
+      }
     </script>
 {% endblock %}
