@@ -65,6 +65,9 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* While an in-place navigation is in flight (see nav.js). */
+html.is-navigating { cursor: progress; }
+
 h1, h2, h3, h4 { margin: 0; font-weight: 600; line-height: 1.2; }
 p { margin: 0 0 0.75rem; }
 p:last-child { margin-bottom: 0; }

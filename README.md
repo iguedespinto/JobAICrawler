@@ -80,6 +80,46 @@ A URL queued on `/import` arrives **Saved**, and so on your radar. The mark is
 applied only when the opportunity is first created, so re-importing a job you
 have since marked **Applied** never knocks it back.
 
+### In-place navigation (a UI norm)
+
+**Every button and every filter acts in place: it must not reload the page or
+lose the scroll position.** Clicking Save, closing a job, importing, changing a
+facet — the result is fetched and swapped into the page where you are, not a
+fresh page you have to find your place in again. This is a norm, not a
+per-feature choice: any button or filter added in the future is expected to
+behave the same way.
+
+You get it for free, so honour it by building the ordinary way rather than
+working around it:
+
+- The enhancer is `app/static/js/nav.js`, loaded once by `_layout.html`. It
+  intercepts every `<form>` submit and every content `<a>` click inside
+  `.main__inner`, fetches the destination, and swaps in the response's
+  `.main__inner`. **A plain server-rendered form or link inside the content is
+  all a new control needs** — no per-button JavaScript, no JSON endpoint. A
+  route still just does its work and redirects back (or renders its page) as it
+  always has.
+- **Scroll rule:** the position is kept when the action leaves you on the same
+  path (a save, a filter on the same list); it goes to the top only when the
+  path genuinely changes (opening a job, switching view). Back and forward
+  restore the scroll of the entry they return to.
+- **It is progressive enhancement.** With JavaScript off, or if a fetch fails,
+  the same form or link navigates normally — so never rely on the swap for
+  correctness, only for the smoother feel.
+
+Two things to keep in mind when you add UI:
+
+- **Page-specific scripts belong in `{% block scripts %}` and must bind to
+  elements inside the content.** The block renders within `.main__inner`, so a
+  swap re-runs it against the new nodes; a script that instead attaches a
+  `document`- or `window`-level listener will stack a fresh copy on every swap
+  unless it guards itself (see the `window.__targetsEditBound` flag in
+  `targets.html`).
+- **Opt out only when a link genuinely must leave in-place navigation.**
+  External links already carry `target="_blank"` and are skipped; for anything
+  else that needs a real browser navigation, add `data-native` to the form or
+  link.
+
 ### Environment variables
 
 Required:

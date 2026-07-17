@@ -11,6 +11,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
+    {# In-place navigation: enhances every content form and link so an action
+       swaps the page without a full reload or a lost scroll position. Loaded
+       once, outside the swapped region, so it is never re-run. #}
+    <script defer src="{{ url_for('static', filename='js/nav.js') }}"></script>
     {% block head %}{% endblock %}
   </head>
   <body>
@@ -62,9 +66,13 @@
           {% endwith %}
 
           {% block content %}{% endblock %}
+
+          {# Inside the swapped region on purpose: an in-place navigation carries
+             the destination page's scripts with its content and re-runs them, so
+             each page's script binds to the content it was rendered with. #}
+          {% block scripts %}{% endblock %}
         </div>
       </main>
     </div>
-    {% block scripts %}{% endblock %}
   </body>
 </html>
