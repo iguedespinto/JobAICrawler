@@ -274,6 +274,11 @@ a:hover { text-decoration-color: currentColor; }
   margin: 0 0.2rem 0.3rem 0;
 }
 
+/* Keyword chips link to a Google search for the term; keep the chip look
+   rather than the default link underline, with a quiet hover to signal it. */
+a.tag { text-decoration: none; transition: border-color 0.12s ease, color 0.12s ease; }
+a.tag:hover { border-color: var(--pine); color: var(--oxblood); }
+
 /* ── Controls ───────────────────────────────────────────────────────────── */
 
 input[type="text"], input[type="file"], textarea, select {

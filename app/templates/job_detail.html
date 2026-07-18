@@ -146,7 +146,9 @@
           <div class="panel">
             <h2 class="section-title">Keywords</h2>
             {% for keyword in job.keywords %}
-              <span class="tag">{{ keyword }}</span>
+              <a class="tag" href="https://www.google.com/search?{{ {'q': keyword} | urlencode }}"
+                 target="_blank" rel="noopener noreferrer"
+                 title="Search Google for &quot;{{ keyword }}&quot;">{{ keyword }}</a>
             {% endfor %}
           </div>
         {% endif %}
