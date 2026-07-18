@@ -233,6 +233,41 @@ def test_job_detail_route(app_client, monkeypatch):
     assert "Python" in body
 
 
+def test_job_detail_keywords_link_to_a_google_search(app_client, monkeypatch):
+    """Each keyword chip on the detail page is a Google search for that term,
+    opened in a new tab. "C/C++" pins the URL-encoding of the query."""
+    job_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[{"_id": job_id, "title": "ML Engineer", "keywords": ["Python", "C/C++"]}],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get(f"/jobs/{job_id}").data.decode("utf-8")
+    assert 'href="https://www.google.com/search?q=Python"' in body
+    assert 'href="https://www.google.com/search?q=C%2FC%2B%2B"' in body
+    # External, so a new tab — and, being cross-origin, left out of in-place nav.
+    assert 'target="_blank"' in body
+
+
+def test_jobs_list_keywords_link_to_a_google_search(app_client, monkeypatch):
+    """The same keyword-as-Google-link on each job card in the list."""
+    fake_db = FakeDB(
+        jobs=[{"_id": ObjectId(), "title": "ML Engineer", "keywords": ["C/C++"]}],
+        profiles=[],
+    )
+
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+    assert 'href="https://www.google.com/search?q=C%2FC%2B%2B"' in body
+
+
 def test_edit_job_route_updates_fields(app_client, monkeypatch):
     job_id = ObjectId()
     fake_db = FakeDB(
