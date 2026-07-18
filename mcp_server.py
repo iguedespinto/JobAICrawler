@@ -246,6 +246,7 @@ def _build_job_filter(
     keyword: Optional[str],
     state: Optional[str],
     user_status: Optional[str] = None,
+    exclude: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Build the Mongo filter shared by find/count."""
     filt: Dict[str, Any] = {}
@@ -271,6 +272,21 @@ def _build_job_filter(
             {"keywords": regex},
             {"description_text": regex},
         ]
+    # Free-text exclusion, the mirror of ``query`` and of the web list's
+    # "cannot contain": drop any posting mentioning a term in its title,
+    # keywords, or description. Comma-separated, so several can be ruled out at
+    # once; a job is excluded if it matches ANY of them ($nor over every
+    # (field, term) pair). Terms are escaped so special characters match literally.
+    if exclude:
+        terms = [part.strip() for part in exclude.split(",") if part.strip()]
+        if terms:
+            clauses = []
+            for term in terms:
+                regex = {"$regex": re.escape(term), "$options": "i"}
+                clauses.append({"title": regex})
+                clauses.append({"keywords": regex})
+                clauses.append({"description_text": regex})
+            filt["$nor"] = clauses
     return filt
 
 
@@ -281,10 +297,11 @@ def count_jobs_in_db(
     keyword: Optional[str] = None,
     state: Optional[str] = None,
     user_status: Optional[str] = None,
+    exclude: Optional[str] = None,
 ) -> int:
     """Count job offers matching the filters (for pagination)."""
     return db.jobs.count_documents(
-        _build_job_filter(query, company, keyword, state, user_status)
+        _build_job_filter(query, company, keyword, state, user_status, exclude)
     )
 
 
@@ -297,6 +314,7 @@ def find_jobs_in_db(
     page: int = 1,
     limit: int = 20,
     user_status: Optional[str] = None,
+    exclude: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """Retrieve one page of job offers from the database with optional filters.
 
@@ -306,10 +324,12 @@ def find_jobs_in_db(
     - ``state``: 'open' or 'closed' to narrow by state (default: all).
     - ``user_status``: 'saved' or 'applied' to narrow by the user's mark, or
       'radar' for either of them ("on my radar") (default: all).
+    - ``exclude``: comma-separated terms; drop any job mentioning one in its
+      title, keywords, or description (the mirror of ``query``).
     - ``page``: 1-based page number.
     - ``limit``: page size (1-100), newest first.
     """
-    filt = _build_job_filter(query, company, keyword, state, user_status)
+    filt = _build_job_filter(query, company, keyword, state, user_status, exclude)
     limit = max(1, min(int(limit), 100))
     page = max(1, int(page))
     skip = (page - 1) * limit
@@ -376,6 +396,7 @@ def find_jobs(
     page: int = 1,
     limit: int = 20,
     user_status: str = "",
+    exclude: str = "",
 ) -> Dict[str, Any]:
     """Retrieve a page of job offers from the database.
 
@@ -388,6 +409,8 @@ def find_jobs(
         limit: Page size (1-100), newest first.
         user_status: How the user marked the job — 'saved' or 'applied', or
             'radar' for either ("on my radar") (default: all).
+        exclude: Comma-separated terms to rule out — drop any job mentioning one
+            in its title, keywords, or description (the mirror of query).
 
     Returns the page of jobs plus pagination metadata (total, page, limit,
     total_pages, has_more). Each job has an id to use with update_job_status.
@@ -400,6 +423,7 @@ def find_jobs(
             keyword=keyword or None,
             state=state or None,
             user_status=user_status or None,
+            exclude=exclude or None,
         )
         total = count_jobs_in_db(db, **opts)
         jobs = find_jobs_in_db(db, page=page, limit=limit, **opts)
