@@ -35,7 +35,8 @@ def split_terms(raw: Any) -> List[str]:
 def _job_passes(job: Dict[str, Any], must: List[str], cannot: List[str]) -> bool:
     """Apply the must-contain / cannot-contain filters to a single job.
 
-    ``must``   - every term must appear in the title, description, or keywords.
+    ``must``   - any term may appear in the title, description, or keywords
+                 (a job hits if it matches at least one of the terms).
     ``cannot`` - no term may appear in the keywords.
     Both are case-insensitive substring checks; empty lists pass everything.
     """
@@ -48,7 +49,7 @@ def _job_passes(job: Dict[str, Any], must: List[str], cannot: List[str]) -> bool
         ]
     ).lower()
 
-    if must and not all(term in haystack for term in must):
+    if must and not any(term in haystack for term in must):
         return False
     if cannot and any(term in keywords_text for term in cannot):
         return False
