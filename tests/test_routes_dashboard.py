@@ -84,15 +84,18 @@ def _filter_db():
     )
 
 
-def test_must_contain_requires_all_terms_across_fields():
-    # "python" appears in description/keywords of jobs 1 & 3; "aws" in 1 & 3 too.
+def test_must_contain_matches_any_term_across_fields():
+    # OR semantics: a job hits if it contains ANY of the terms (in title,
+    # description, or keywords), not all of them. No job has both "python" and
+    # "react", so AND would return nothing; OR returns every job with either.
     rows, total = routes_dashboard.aggregate_keywords(
-        _filter_db(), must=["python", "aws"]
+        _filter_db(), must=["python", "react"]
     )
-    assert total == 2  # Backend + Data engineer
+    assert total == 3  # all three: two on python, one on react
     by = {r["keyword"].lower(): r for r in rows}
-    assert by["python"]["count"] == 2
-    assert "react" not in by  # Frontend excluded
+    assert by["python"]["count"] == 2   # Backend + Data
+    assert "react" in by                # the react-only Frontend job is included
+    assert "spark" in by                # from the python-matched Data job
 
 
 def test_cannot_contain_excludes_by_keyword_only():
