@@ -521,6 +521,17 @@ table.data tfoot td {
 }
 .job-link:hover { text-decoration: underline; }
 
+/* The link and its source host read as one unit, host trailing quietly. */
+.job-link-wrap { display: inline-flex; align-items: baseline; gap: 0.5rem; min-width: 0; }
+.job-link__domain {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* A company band: the heading spans every column, so the cards below visibly
    belong to it rather than merely following it. */
 .group-head {

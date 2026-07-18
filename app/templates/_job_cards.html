@@ -47,8 +47,11 @@
         {# The arrow marks this as leaving the site: the company link above
            merely filters the list. #}
         {% if job.url %}
-          <a href="{{ job.url }}" target="_blank" rel="noopener noreferrer"
-             class="job-link">Job link ↗</a>
+          <span class="job-link-wrap">
+            <a href="{{ job.url }}" target="_blank" rel="noopener noreferrer"
+               class="job-link">Job link ↗</a>
+            {% if job.domain %}<span class="job-link__domain">{{ job.domain }}</span>{% endif %}
+          </span>
         {% else %}
           <span></span>
         {% endif %}

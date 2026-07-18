@@ -122,7 +122,8 @@
           <div class="fact__label">Posting</div>
           <div class="fact__value">
             {% if job.url %}
-              <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window">Open ↗</a>
+              <a href="{{ job.url }}" target="_blank" rel="noopener" class="ext-window job-link">Job link ↗</a>
+              {% if job.domain %}<span class="job-link__domain">{{ job.domain }}</span>{% endif %}
             {% else %}
               —
             {% endif %}
