@@ -200,12 +200,14 @@ def test_filter_keeps_scroll_without_reloading(server, page):
     y = _mark_and_probe(page, 250)
     assert y > 0
 
-    page.eval_on_selector('.facet a[href*="state=open"]', "a => a.click()")
+    # The list defaults to open, so "All" is the live facet link; the seed is all
+    # open, so it swaps in the same jobs at the same height — scroll must hold.
+    page.eval_on_selector('.facet a[href*="state=all"]', "a => a.click()")
     page.wait_for_function("() => !document.querySelector('.main__inner').dataset.pre")
 
     assert page.evaluate("window.__probe") == "kept"      # no full reload
     assert page.evaluate("window.scrollY") == y           # position kept
-    assert "state=open" in page.url
+    assert "state=all" in page.url
 
 
 def test_opening_a_job_goes_to_the_top(server, page):

@@ -148,15 +148,19 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         filters["company"] = {"$regex": f"^{re.escape(company)}$", "$options": "i"}
         echo["company"] = company
 
-    # All jobs by default; ?state=open or ?state=closed narrows to one state.
-    # A job with no stored state counts as open.
+    # Open by default: still-accepting-applications is what you browse for.
+    # ?state=all widens to every state, ?state=closed narrows to closed. A job
+    # with no stored state counts as open. The default is echoed as "open" so the
+    # facet lights that tab and every link carries the scope forward.
     state = request.args.get("state", "").strip().lower()
-    if state == "open":
-        filters["state"] = {"$ne": "closed"}
-        echo["state"] = "open"
-    elif state == "closed":
+    if state == "closed":
         filters["state"] = "closed"
         echo["state"] = "closed"
+    elif state == "all":
+        echo["state"] = "all"
+    else:
+        filters["state"] = {"$ne": "closed"}
+        echo["state"] = "open"
 
     # Narrow by how the user marked the job. ``radar`` is the umbrella rather
     # than a stored value, so it matches every tracked mark. An unrecognised
@@ -374,7 +378,7 @@ def list_jobs():
         total=total,
         total_pages=total_pages,
         filters=echo,
-        state_filter=echo.get("state", "all"),
+        state_filter=echo.get("state", "open"),
         user_status_filter=echo.get("user_status", "all"),
         status_filters=STATUS_FILTERS,
         status_filter_labels=STATUS_FILTER_LABELS,

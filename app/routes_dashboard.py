@@ -175,8 +175,11 @@ def view_dashboard():
 
     must_raw = request.args.get("must", "").strip()
     cannot_raw = request.args.get("cannot", "").strip()
+    # Open by default, like the opportunities list; ?state=all counts closed
+    # postings too (kept for keyword analysis), ?state=closed only them.
     state = request.args.get("state", "").strip().lower()
-    state = state if state in {"open", "closed"} else "all"
+    if state not in {"open", "closed", "all"}:
+        state = "open"
     rows, total_jobs = aggregate_keywords(
         db,
         must=split_terms(must_raw),
