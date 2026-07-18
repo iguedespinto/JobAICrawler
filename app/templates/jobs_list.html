@@ -49,11 +49,15 @@
       {% if filters.get('group_order') %}<input type="hidden" name="group_order" value="{{ filters.get('group_order') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
              placeholder="Search title, keywords, description" aria-label="Search opportunities" />
+      <input type="text" name="exclude" value="{{ filters.get('exclude', '') }}"
+             placeholder="Cannot contain (comma,separated)"
+             aria-label="Exclude opportunities containing these terms" />
       <button type="submit" class="btn">Search</button>
-      {% if filters.get('q') %}
+      {% if filters.get('q') or filters.get('exclude') %}
+        {# Clears both text fields at once; the facets below are kept. #}
         <a class="btn btn-secondary"
            href="{{ url_for('jobs.list_jobs', state=filters.get('state'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
-           style="text-decoration: none;">Clear search</a>
+           style="text-decoration: none;">Clear</a>
       {% endif %}
     </form>
 
@@ -68,7 +72,7 @@
               {% if state_filter == opt %}
                 <strong>{{ opt | capitalize }}</strong>
               {% else %}
-                <a href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ opt | capitalize }}</a>
+                <a href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ opt | capitalize }}</a>
               {% endif %}
             {% endfor %}
           </div>
@@ -80,13 +84,13 @@
             {% if user_status_filter == 'all' %}
               <strong>All</strong>
             {% else %}
-              <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">All</a>
+              <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">All</a>
             {% endif %}
             {% for opt in status_filters %}
               {% if user_status_filter == opt %}
                 <strong>{{ status_filter_labels[opt] }}</strong>
               {% else %}
-                <a href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ status_filter_labels[opt] }}</a>
+                <a href="{{ url_for('jobs.list_jobs', user_status=opt, state=filters.get('state'), q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ status_filter_labels[opt] }}</a>
               {% endif %}
             {% endfor %}
           </div>
@@ -101,12 +105,12 @@
             {% if not grouped %}
               <strong>None</strong>
             {% else %}
-              <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">None</a>
+              <a href="{{ url_for('jobs.list_jobs', state=filters.get('state'), q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">None</a>
             {% endif %}
             {% if grouped %}
               <strong>Company</strong>
             {% else %}
-              <a href="{{ url_for('jobs.list_jobs', group='company', state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">Company</a>
+              <a href="{{ url_for('jobs.list_jobs', group='company', state=filters.get('state'), q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">Company</a>
             {% endif %}
           </div>
         </div>
@@ -119,7 +123,7 @@
                 {% if group_order == opt %}
                   <strong>{{ group_order_labels[opt] }}</strong>
                 {% else %}
-                  <a href="{{ url_for('jobs.list_jobs', group='company', group_order=opt, state=filters.get('state'), q=filters.get('q'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">{{ group_order_labels[opt] }}</a>
+                  <a href="{{ url_for('jobs.list_jobs', group='company', group_order=opt, state=filters.get('state'), q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status')) }}">{{ group_order_labels[opt] }}</a>
                 {% endif %}
               {% endfor %}
             </div>
@@ -135,14 +139,14 @@
         {% if filters.get('keyword') %}
           <span class="scope__pin">
             Keyword <strong>{{ filters.get('keyword') }}</strong>
-            <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
+            <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), exclude=filters.get('exclude'), state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
                aria-label="Clear keyword filter" title="Clear keyword">×</a>
           </span>
         {% endif %}
         {% if filters.get('company') %}
           <span class="scope__pin">
             Company <strong>{{ filters.get('company') }}</strong>
-            <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), state=filters.get('state'), keyword=filters.get('keyword'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
+            <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), exclude=filters.get('exclude'), state=filters.get('state'), keyword=filters.get('keyword'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
                aria-label="Clear company filter" title="Clear company">×</a>
           </span>
         {% endif %}

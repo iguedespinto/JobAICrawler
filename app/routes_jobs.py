@@ -106,6 +106,24 @@ def _build_filters() -> Tuple[Dict[str, Any], Dict[str, Any]]:
         ]
         echo["q"] = query
 
+    # Free-text exclusion, the mirror of the search above: drop any posting that
+    # mentions a term in its title, keywords, or description. Comma-separated so
+    # several can be ruled out at once, and a job is excluded if it matches ANY
+    # of them — the $nor spans every (field, term) pair. Terms are escaped so
+    # special characters match literally, as with the search.
+    exclude = request.args.get("exclude", "").strip()
+    if exclude:
+        terms = [part.strip() for part in exclude.split(",") if part.strip()]
+        if terms:
+            clauses = []
+            for term in terms:
+                regex = {"$regex": re.escape(term), "$options": "i"}
+                clauses.append({"title": regex})
+                clauses.append({"keywords": regex})
+                clauses.append({"description_text": regex})
+            filters["$nor"] = clauses
+            echo["exclude"] = exclude
+
     # Exact (case-insensitive) keyword match against the keywords array, used by
     # the dashboard "Opportunities" links to show the jobs behind a count.
     # If the keyword belongs to a group, match any of the group's variants.
