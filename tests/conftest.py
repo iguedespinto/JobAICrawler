@@ -48,6 +48,10 @@ def _matches_filter(doc: Dict[str, Any], filter_doc: Dict[str, Any]) -> bool:
         if key == "$or":
             if not any(_matches_filter(doc, sub) for sub in value):
                 return False
+        elif key == "$nor":
+            # Passes only if none of the sub-filters match (the negation of $or).
+            if any(_matches_filter(doc, sub) for sub in value):
+                return False
         elif isinstance(value, dict):
             if "$gte" in value:
                 target = _get_nested(doc, key)

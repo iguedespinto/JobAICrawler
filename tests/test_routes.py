@@ -75,6 +75,73 @@ def test_jobs_list_keyword_filter_exact_match(app_client, monkeypatch):
     assert "Frontend" not in body
 
 
+def _exclude_db():
+    return FakeDB(
+        jobs=[
+            # Match is via the description, which cards don't render — so the
+            # title's absence is what proves the job was excluded.
+            {"_id": ObjectId(), "title": "Alpha Role", "description_text": "manager duties"},
+            {"_id": ObjectId(), "title": "Beta Role", "keywords": ["Manager"]},
+            {"_id": ObjectId(), "title": "Gamma Manager", "keywords": ["Ops"]},
+            {"_id": ObjectId(), "title": "Delta Role", "keywords": ["Python"], "description_text": "APIs"},
+            {"_id": ObjectId(), "title": "Epsilon Role", "keywords": ["Go"], "description_text": "cloud"},
+        ],
+        profiles=[],
+    )
+
+
+def test_jobs_list_exclude_hides_matches_across_title_keywords_description(app_client, monkeypatch):
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: _exclude_db())
+
+    body = app_client.get("/jobs?exclude=manager").data.decode("utf-8")
+    assert "Alpha Role" not in body      # excluded on description
+    assert "Beta Role" not in body       # excluded on keyword
+    assert "Gamma Manager" not in body   # excluded on title
+    assert "Delta Role" in body          # no "manager" anywhere
+    assert "Epsilon Role" in body
+
+
+def test_jobs_list_exclude_takes_several_comma_separated_terms(app_client, monkeypatch):
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: _exclude_db())
+
+    # Drop anything mentioning either term; only Epsilon survives.
+    body = app_client.get("/jobs?exclude=manager, python").data.decode("utf-8")
+    assert "Epsilon Role" in body
+    assert "Delta Role" not in body      # Python keyword
+    assert "Gamma Manager" not in body
+
+
+def test_jobs_list_exclude_combines_with_the_search(app_client, monkeypatch):
+    fake_db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Backend Engineer", "keywords": ["Python"]},
+            {"_id": ObjectId(), "title": "Engineering Manager", "keywords": ["Leadership"]},
+        ],
+        profiles=[],
+    )
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    # Search keeps both (title has "engineer"); exclude then removes the manager.
+    body = app_client.get("/jobs?q=engineer&exclude=manager").data.decode("utf-8")
+    assert "Backend Engineer" in body
+    assert "Engineering Manager" not in body
+
+
+def test_jobs_list_offers_a_cannot_contain_field(app_client, monkeypatch):
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: FakeDB(jobs=[], profiles=[]))
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+    assert 'name="exclude"' in body
+
+
 def test_jobs_list_company_filter_exact_match(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[
