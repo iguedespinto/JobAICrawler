@@ -82,6 +82,49 @@ def test_find_jobs_state_filter_and_company():
     assert {j["title"] for j in closed} == {"Old Role"}
 
 
+def _exclude_jobs_db():
+    return FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Alpha", "description_text": "reports to a manager"},
+            {"_id": ObjectId(), "title": "Beta", "keywords": ["Manager"]},
+            {"_id": ObjectId(), "title": "Gamma Manager", "keywords": ["Ops"]},
+            {"_id": ObjectId(), "title": "Delta", "keywords": ["Python"], "description_text": "APIs"},
+            {"_id": ObjectId(), "title": "Epsilon", "keywords": ["Go"], "description_text": "cloud"},
+        ],
+        profiles=[],
+    )
+
+
+def test_find_jobs_exclude_spans_title_keywords_description():
+    db = _exclude_jobs_db()
+    # Dropped: Alpha (description), Beta (keyword), Gamma (title).
+    titles = {j["title"] for j in mcp_server.find_jobs_in_db(db, exclude="manager")}
+    assert titles == {"Delta", "Epsilon"}
+
+
+def test_find_jobs_exclude_takes_several_comma_separated_terms():
+    db = _exclude_jobs_db()
+    titles = {j["title"] for j in mcp_server.find_jobs_in_db(db, exclude="manager, python")}
+    assert titles == {"Epsilon"}
+    # Count is filtered the same way, so pagination stays correct.
+    assert mcp_server.count_jobs_in_db(db, exclude="manager, python") == 1
+
+
+def test_find_jobs_exclude_combines_with_query():
+    db = FakeDB(
+        jobs=[
+            {"_id": ObjectId(), "title": "Backend Engineer", "keywords": ["Python"]},
+            {"_id": ObjectId(), "title": "Engineering Manager", "keywords": ["Leadership"]},
+        ],
+        profiles=[],
+    )
+    titles = {
+        j["title"]
+        for j in mcp_server.find_jobs_in_db(db, query="engineer", exclude="manager")
+    }
+    assert titles == {"Backend Engineer"}
+
+
 def test_update_job_status_state_and_user_status():
     db = _jobs_db()
     job = db.jobs.find_one({"title": "Backend Engineer"})
