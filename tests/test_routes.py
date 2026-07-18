@@ -177,7 +177,8 @@ def test_jobs_list_company_name_links_to_filtered_view(app_client, monkeypatch):
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
     body = app_client.get("/jobs").data.decode("utf-8")
-    assert 'href="/jobs?company=Acme"' in body
+    # The link carries the current state (open by default) so it never widens.
+    assert 'href="/jobs?company=Acme&amp;state=open"' in body
 
 
 def test_jobs_list_company_filter_combines_with_state(app_client, monkeypatch):
@@ -226,7 +227,7 @@ def test_jobs_list_search_escapes_special_characters(app_client, monkeypatch):
     assert "Python Engineer" not in body
 
 
-def test_jobs_list_shows_all_states_and_filters(app_client, monkeypatch):
+def test_jobs_list_defaults_to_open_and_filters_by_state(app_client, monkeypatch):
     fake_db = FakeDB(
         jobs=[
             {"_id": ObjectId(), "title": "Open Role", "company": "Acme", "state": "open"},
@@ -239,11 +240,15 @@ def test_jobs_list_shows_all_states_and_filters(app_client, monkeypatch):
 
     monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
 
-    # Default: all states shown.
-    everything = app_client.get("/jobs").data.decode("utf-8")
+    # Default now shows only open opportunities.
+    default = app_client.get("/jobs").data.decode("utf-8")
+    assert "Open Role" in default and "Closed Role" not in default
+
+    # ?state=all widens to every state.
+    everything = app_client.get("/jobs?state=all").data.decode("utf-8")
     assert "Open Role" in everything and "Closed Role" in everything
 
-    # Narrow by state.
+    # Explicit narrowing still works.
     open_only = app_client.get("/jobs?state=open").data.decode("utf-8")
     assert "Open Role" in open_only and "Closed Role" not in open_only
 

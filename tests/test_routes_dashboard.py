@@ -136,8 +136,14 @@ def test_dashboard_route_renders(app_client, monkeypatch):
     # every page, so a bare substring check would pass anywhere.
     assert '<h1 class="page-title">Keywords</h1>' in body
     assert "Python" in body
-    # Default scope counts all 4 jobs (incl. the closed one): Python is in 3.
-    assert "75.0%" in body
+    # Defaults to open now: 3 open jobs, Python in all 3 -> 100%. The closed
+    # job's keyword (Go) is left out entirely.
+    assert "100.0%" in body
+    assert 'data-keyword="Go"' not in body
+
+    # ?state=all widens to every state: 4 jobs, Python in 3 -> 75%.
+    all_body = app_client.get("/dashboard?state=all").data.decode("utf-8")
+    assert "75.0%" in all_body
 
 
 def test_dashboard_table_links_both_the_keyword_and_its_count(app_client, monkeypatch):

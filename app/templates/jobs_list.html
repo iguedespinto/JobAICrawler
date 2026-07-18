@@ -72,7 +72,7 @@
               {% if state_filter == opt %}
                 <strong>{{ opt | capitalize }}</strong>
               {% else %}
-                <a href="{{ url_for('jobs.list_jobs', state=(opt if opt != 'all' else none), q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ opt | capitalize }}</a>
+                <a href="{{ url_for('jobs.list_jobs', state=opt, q=filters.get('q'), exclude=filters.get('exclude'), keyword=filters.get('keyword'), company=filters.get('company'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}">{{ opt | capitalize }}</a>
               {% endif %}
             {% endfor %}
           </div>
