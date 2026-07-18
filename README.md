@@ -19,6 +19,15 @@ JSON import flow.
 `requirements.txt` holds only what running the app needs; test tooling lives in
 `requirements-dev.txt` so the two stay separable.
 
+The in-place navigation (see the norm below) is client-side, so its guarantees
+are covered by browser tests under `tests/browser` rather than by `pytest`'s
+Flask-client tests. They are opt-in — the default `pytest` run and CI skip them
+unless a browser is installed:
+
+- `pip install -r requirements-browser.txt`
+- `python -m playwright install chromium`
+- `pytest tests/browser`
+
 ### Importing opportunities
 
 1. Open `/import`.

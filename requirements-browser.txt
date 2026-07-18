@@ -1,0 +1,7 @@
+# Optional: browser (end-to-end) tests for in-place navigation (tests/browser).
+# Deliberately NOT pulled in by requirements-dev.txt, so the default suite and
+# CI stay browser-free; those tests skip themselves unless this is installed.
+#   pip install -r requirements-browser.txt
+#   python -m playwright install chromium
+#   pytest tests/browser
+playwright>=1.40
