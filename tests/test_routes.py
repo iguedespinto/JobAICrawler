@@ -909,6 +909,38 @@ def test_jobs_list_partial_cards_carry_the_posting_link(app_client, monkeypatch)
     assert 'class="job-link"' in body
 
 
+def test_jobs_list_cards_show_the_source_domain(app_client, monkeypatch):
+    """Each card names its source host (lowercased, no 'www.') beside the link."""
+    fake_db = FakeDB(
+        jobs=[{"_id": ObjectId(), "title": "X", "url": "https://www.Indeed.com/viewjob?jk=1"}],
+        profiles=[],
+    )
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+    assert ">indeed.com</span>" in body
+
+
+def test_job_detail_posting_link_is_labelled_job_link_with_domain(app_client, monkeypatch):
+    """The posting link reads 'Job link', never 'Open' (which collides with the
+    OPEN state), and shows the source host after it."""
+    job_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[{"_id": job_id, "title": "X", "url": "https://www.linkedin.com/jobs/view/1"}],
+        profiles=[],
+    )
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: fake_db)
+
+    body = app_client.get(f"/jobs/{job_id}").data.decode("utf-8")
+    assert "Job link" in body
+    assert "Open ↗</a>" not in body          # the confusing label is gone
+    assert ">linkedin.com</span>" in body    # source host, www stripped
+
+
 def test_jobs_list_paging_is_stable_across_tied_timestamps(app_client, monkeypatch):
     """A whole import batch shares one created_at, so the sort needs a tie-break.
 

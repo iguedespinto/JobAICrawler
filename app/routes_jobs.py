@@ -6,6 +6,7 @@ import re
 from datetime import datetime, timezone
 from html import unescape
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import urlparse
 
 import nh3
 from bson import ObjectId
@@ -205,6 +206,19 @@ def _format_date(value: Any) -> Optional[str]:
     return None
 
 
+def _domain(url: Any) -> Optional[str]:
+    """The bare host of a posting URL, for showing its source: lowercased, no
+    leading ``www.`` and no port. Returns None when there's no usable host."""
+    if not url:
+        return None
+    text = str(url)
+    host = urlparse(text).netloc or urlparse("//" + text).netloc
+    host = host.lower().split("@")[-1].split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    return host or None
+
+
 def _company_key(value: Any) -> Tuple[int, str]:
     """Grouping key for a company: case/space-insensitive, blanks bucketed last.
 
@@ -326,6 +340,7 @@ def list_jobs():
             "company": job.get("company"),
             "location": job.get("location"),
             "url": job.get("url"),
+            "domain": _domain(job.get("url")),
             "salary": job.get("salary"),
             "keywords": job.get("keywords", []),
             "status": job.get("status"),
@@ -387,6 +402,7 @@ def get_job(job_id: str):
 
     job["id"] = str(job["_id"])
     job.pop("_id", None)
+    job["domain"] = _domain(job.get("url"))
 
     return render_template("job_detail.html", job=job)
 
