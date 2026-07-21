@@ -62,6 +62,40 @@
     .keywords .tag { font-size: 0.6875rem; }
     .row-title { font-weight: 600; }
     .actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
+
+    /* The closest-match link carries a card of that opportunity, shown on hover
+       or focus. The staging table clips its own overflow (overflow-x: auto), so
+       the card is fixed-positioned by the script below to escape the clip; here
+       it is only laid out and kept hidden until shown. Absent the script it
+       simply never appears — the link still works as before. */
+    .match-hover { position: relative; }
+    .match-card {
+      display: none;
+      position: fixed;
+      z-index: 60;
+      width: 22rem;
+      max-width: calc(100vw - 2rem);
+      flex-direction: column;
+      gap: 0.4rem;
+      padding: 0.75rem 0.85rem;
+      background: var(--surface);
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      /* The Similarity column is right-aligned mono; the card is left prose. */
+      text-align: left;
+      white-space: normal;
+      font-family: var(--font-body);
+    }
+    .match-card.is-shown { display: flex; }
+    .match-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+    .match-card__title { font-size: 0.9375rem; font-weight: 600; color: var(--ink); text-decoration: none; }
+    a.match-card__title:hover { color: var(--pine); text-decoration: underline; }
+    .match-card__company { font-size: 0.8125rem; font-weight: 600; color: var(--pine); }
+    .match-card__meta { display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem; font-size: 0.8125rem; color: var(--ink-muted); }
+    .match-card__meta strong { color: var(--ink); font-weight: 600; }
+    .match-card__keywords { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+    .match-card__desc { font-size: 0.8125rem; line-height: 1.5; color: var(--ink-muted); }
   </style>
 {% endblock %}
 
@@ -237,16 +271,58 @@
                       </div>
                     {% endif %}
                   </td>
-                  <td>{{ row.job.company }}</td>
+                  <td>
+                    {% if row.job.company %}
+                      {# Straight to this company's opportunities. No state is
+                         passed, so the list falls back to its open-by-default
+                         view. A new tab on purpose: it leaves you mid-review of
+                         the staging batch rather than swapping it away. #}
+                      <a href="{{ url_for('jobs.list_jobs', company=row.job.company) }}"
+                         target="_blank" rel="noopener">{{ row.job.company }}</a>
+                    {% else %}
+                      {{ row.job.company }}
+                    {% endif %}
+                  </td>
                   <td class="num">
                     {{ row.similarity }}%
                     {% if row.match_label %}
-                      <div class="reason">
-                        {% if row.match_url %}
-                          <a href="{{ row.match_url }}" target="_blank" rel="noopener">{{ row.match_label }}</a>
-                        {% else %}
-                          {{ row.match_label }}
-                        {% endif %}
+                      {# The closest match, with a card of that opportunity
+                         revealed on hover/focus (see the script below). The link
+                         itself still goes to the posting; the card is a preview. #}
+                      <div class="reason match">
+                        <span class="match-hover">
+                          {% if row.match_url %}
+                            <a href="{{ row.match_url }}" target="_blank" rel="noopener" class="match-link">{{ row.match_label }}</a>
+                          {% else %}
+                            <span class="match-link" tabindex="0">{{ row.match_label }}</span>
+                          {% endif %}
+                          {% if row.match_card %}
+                            {% set card = row.match_card %}
+                            <span class="match-card" role="tooltip">
+                              <span class="match-card__head">
+                                {% if card.job_id %}
+                                  <a class="match-card__title" href="{{ url_for('jobs.get_job', job_id=card.job_id) }}">{{ card.title }}</a>
+                                {% else %}
+                                  <span class="match-card__title">{{ card.title }}</span>
+                                {% endif %}
+                                <span class="badge {{ card.state }}">{{ card.state }}</span>
+                              </span>
+                              {% if card.company %}<span class="match-card__company">{{ card.company }}</span>{% endif %}
+                              {% if card.location or card.salary %}
+                                <span class="match-card__meta">
+                                  {% if card.location %}<span>{{ card.location }}</span>{% endif %}
+                                  {% if card.salary %}<span><strong>{{ card.salary }}</strong></span>{% endif %}
+                                </span>
+                              {% endif %}
+                              {% if card.keywords %}
+                                <span class="match-card__keywords">
+                                  {% for keyword in card.keywords %}<span class="tag">{{ keyword }}</span>{% endfor %}
+                                </span>
+                              {% endif %}
+                              {% if card.description %}<span class="match-card__desc">{{ card.description }}</span>{% endif %}
+                            </span>
+                          {% endif %}
+                        </span>
                       </div>
                     {% endif %}
                   </td>
@@ -267,4 +343,80 @@
       {% endif %}
     </section>
   </div>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    // Closest-match hover card. On hover or keyboard focus of a match link, its
+    // sibling card is fixed-positioned beside the link and shown — fixed, so the
+    // staging table's own overflow clip can't crop it. A short hide delay lets
+    // the pointer cross the small gap into the card (whose title can be a link)
+    // without it vanishing. Delegated on document and guarded so an in-place
+    // swap (see nav.js) re-running this script never stacks a second set of
+    // handlers. Without JS the card simply never shows; the link is unchanged.
+    (function () {
+      "use strict";
+      if (window.__matchCardBound) return;
+      window.__matchCardBound = true;
+
+      var shown = null;
+      var hideTimer = null;
+
+      function place(hover) {
+        var card = hover.querySelector(".match-card");
+        if (!card) return;
+        if (shown && shown !== card) shown.classList.remove("is-shown");
+        var link = hover.querySelector(".match-link");
+        var rect = (link || hover).getBoundingClientRect();
+        card.classList.add("is-shown");            // must be shown to measure it
+        var margin = 8;
+        var left = Math.max(margin, Math.min(rect.left, window.innerWidth - card.offsetWidth - margin));
+        var top = rect.bottom + 6;
+        // Flip above the link when the card would run off the bottom.
+        if (top + card.offsetHeight > window.innerHeight - margin && rect.top - card.offsetHeight - 6 > margin) {
+          top = rect.top - card.offsetHeight - 6;
+        }
+        card.style.left = left + "px";
+        card.style.top = top + "px";
+        shown = card;
+      }
+
+      function hide() {
+        if (shown) { shown.classList.remove("is-shown"); shown = null; }
+      }
+      function cancelHide() { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } }
+      function scheduleHide() { cancelHide(); hideTimer = setTimeout(hide, 140); }
+
+      // relatedTarget inside the same group is a link<->card move, not a leave.
+      function stays(e, hover) {
+        return e.relatedTarget && hover.contains(e.relatedTarget);
+      }
+
+      document.addEventListener("mouseover", function (e) {
+        var hover = e.target.closest(".match-hover");
+        if (!hover) return;
+        cancelHide();
+        place(hover);
+      });
+      document.addEventListener("mouseout", function (e) {
+        var hover = e.target.closest(".match-hover");
+        if (hover && !stays(e, hover)) scheduleHide();
+      });
+      document.addEventListener("focusin", function (e) {
+        var hover = e.target.closest(".match-hover");
+        if (!hover) return;
+        cancelHide();
+        place(hover);
+      });
+      document.addEventListener("focusout", function (e) {
+        var hover = e.target.closest(".match-hover");
+        if (hover && !stays(e, hover)) scheduleHide();
+      });
+      // A scroll leaves a fixed card stranded away from its link, so drop it.
+      window.addEventListener("scroll", function () { cancelHide(); hide(); }, true);
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") hide();
+      });
+    })();
+  </script>
 {% endblock %}

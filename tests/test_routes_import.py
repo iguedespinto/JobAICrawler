@@ -182,6 +182,125 @@ def test_matching_considers_every_job_regardless_of_state():
     assert rows[0]["reason"] == "url"
 
 
+# ── The closest-match hover card ─────────────────────────────────────
+#
+# Every row's "closest match" link carries a card describing the matched
+# opportunity, revealed on hover. The card data rides on each row as
+# ``match_card`` and is rendered (hidden) into the page.
+
+
+def test_match_card_carries_matched_db_job_details():
+    existing_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[
+            {
+                "_id": existing_id,
+                "title": "Data Architect",
+                "company": "Kennedy & Partners Recruitment",
+                "location": "Dublin",
+                "url": "https://example.com/jobs/da",
+                "salary": "70,000-75,000/year",
+                "keywords": ["Data Architect", "Analytics"],
+                "description_text": "Lead the data platform strategy. " * 30,
+                "state": "open",
+            }
+        ],
+        profiles=[],
+    )
+
+    jobs = [
+        {"title": "Data Architect", "company": "Kennedy & Partners Recruitment",
+         "url": "https://example.com/jobs/da"}
+    ]
+
+    rows = routes_import.match_jobs(jobs, fake_db)
+    card = rows[0]["match_card"]
+
+    # A database match links through to its detail page and mirrors the job card.
+    assert card["job_id"] == str(existing_id)
+    assert card["title"] == "Data Architect"
+    assert card["company"] == "Kennedy & Partners Recruitment"
+    assert card["location"] == "Dublin"
+    assert card["salary"] == "70,000-75,000/year"
+    assert card["state"] == "open"
+    assert card["keywords"] == ["Data Architect", "Analytics"]
+    # A trimmed description snippet, not the whole body.
+    assert card["description"]
+    assert len(card["description"]) <= 221
+
+
+def test_match_card_for_in_file_duplicate_has_no_detail_link():
+    # A row that matches an earlier row in the same upload points at that staged
+    # row, which has no imported detail page — so no job_id to link through.
+    fake_db = FakeDB(jobs=[], profiles=[])
+    jobs = [
+        {"title": "Brand New", "company": "Startup",
+         "url": "https://example.com/bn", "salary": "€100k",
+         "keywords": ["Go"], "description_text": "Build things."},
+        {"title": "Brand New", "company": "Startup",
+         "url": "https://example.com/bn"},
+    ]
+
+    rows = routes_import.match_jobs(jobs, fake_db)
+    card = rows[1]["match_card"]
+
+    assert rows[1]["status"] == "duplicate"
+    assert card is not None
+    assert card["job_id"] is None
+    assert card["title"] == "Brand New"
+    assert card["company"] == "Startup"
+
+
+def test_match_card_absent_when_there_is_no_match():
+    # An empty database gives a lone new row nothing to match against.
+    fake_db = FakeDB(jobs=[], profiles=[])
+
+    rows = routes_import.match_jobs(
+        [{"title": "Solo", "company": "X", "url": "https://example.com/s"}],
+        fake_db,
+    )
+
+    assert rows[0]["match_label"] is None
+    assert rows[0]["match_card"] is None
+
+
+def test_import_page_renders_match_card_with_detail_link(app_client, monkeypatch):
+    existing_id = ObjectId()
+    fake_db = FakeDB(
+        jobs=[
+            {
+                "_id": existing_id,
+                "title": "Data Architect",
+                "company": "Kennedy & Partners Recruitment",
+                "location": "Dublin",
+                "url": "https://example.com/jobs/da",
+                "salary": "70,000-75,000/year",
+                "keywords": ["Analytics"],
+                "description_text": "Own the enterprise data warehouse roadmap.",
+                "state": "open",
+            }
+        ],
+        profiles=[],
+    )
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    # The staged row carries no salary of its own, so the salary below can only be
+    # the matched job's, shown by the card.
+    routes_import.stage_jobs(
+        fake_db,
+        [{"title": "Data Architect",
+          "company": "Kennedy & Partners Recruitment",
+          "url": "https://example.com/jobs/da"}],
+    )
+
+    body = app_client.get("/import").data.decode("utf-8")
+
+    assert "match-card" in body
+    assert f"/jobs/{existing_id}" in body          # links through to the detail page
+    assert "70,000-75,000/year" in body            # the matched job's salary
+    assert "Own the enterprise data warehouse roadmap." in body  # its description
+
+
 def _upload(app_client, payload, filename="offers.json"):
     data = {"import_file": (io.BytesIO(payload.encode("utf-8")), filename)}
     return app_client.post(
@@ -222,6 +341,24 @@ def test_upload_persists_records_in_staging(app_client, monkeypatch):
     # Records persist and render on the import page.
     body = app_client.get("/import").data.decode("utf-8")
     assert "Role A" in body and "Role B" in body
+
+
+def test_import_company_name_links_to_filtered_open_view(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    payload = json.dumps(
+        [{"name": "Data Architect", "company": "Kennedy & Partners",
+          "url": "https://example.com/a"}]
+    )
+    assert _upload(app_client, payload).status_code == 302
+
+    body = app_client.get("/import").data.decode("utf-8")
+    # The company name is a link to that company's opportunities. No state is
+    # passed, so the jobs list falls back to its open-by-default view, and it
+    # opens in a new tab so the staging review is not lost.
+    assert 'href="/jobs?company=Kennedy+%26+Partners"' in body
+    assert 'target="_blank"' in body
 
 
 def test_commit_imports_selected_and_removes_from_staging(app_client, monkeypatch):
