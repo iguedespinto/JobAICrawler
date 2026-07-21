@@ -57,12 +57,27 @@
 
   // Put a fetched page's content region in place of the current one. Returns
   // false when the response has no region we recognise, so the caller can hand
+  // Each page's own CSS lives in <head> (its {% block head %}), so it has to
+  // travel with the swap as well — otherwise the destination renders wearing the
+  // previous page's styles, which is invisible on a plain page and disfiguring on
+  // a form. The shared stylesheet is a <link>, so every <style> here is a page's
+  // own and can be replaced wholesale.
+  function syncPageStyles(doc) {
+    var current = document.head.querySelectorAll("style");
+    for (var i = 0; i < current.length; i++) current[i].remove();
+    var incoming = doc.head.querySelectorAll("style");
+    for (var j = 0; j < incoming.length; j++) {
+      document.head.appendChild(incoming[j].cloneNode(true));
+    }
+  }
+
   // back to a real navigation instead of blanking the page.
   function swap(html) {
     var doc = new DOMParser().parseFromString(html, "text/html");
     var next = doc.querySelector(CONTENT);
     var current = content();
     if (!next || !current) return false;
+    syncPageStyles(doc);
     current.replaceWith(next);
     if (doc.title) document.title = doc.title;
     runScripts(next);

@@ -210,6 +210,22 @@ def test_filter_keeps_scroll_without_reloading(server, page):
     assert "state=all" in page.url
 
 
+def test_page_styles_travel_with_an_in_place_navigation(server, page):
+    """A page's own <head> CSS must arrive with its content.
+
+    Without it the destination renders wearing the previous page's styles —
+    invisible on a plain page, disfiguring on the job edit form, whose labels
+    fall back to inline and cram every field onto one line.
+    """
+    page.goto(server + "/jobs")
+    page.eval_on_selector('.job a[href^="/jobs/"]', "a => a.click()")
+    page.wait_for_function(r"() => /^\/jobs\/[a-f0-9]{24}$/.test(location.pathname)")
+
+    # Styled by the detail page's own block; "inline" is the unstyled fallback.
+    display = page.eval_on_selector(".edit-form label", "el => getComputedStyle(el).display")
+    assert display == "block"
+
+
 def test_opening_a_job_goes_to_the_top(server, page):
     """Following a link to a different page swaps in place but starts at the top."""
     page.goto(server + "/jobs")
