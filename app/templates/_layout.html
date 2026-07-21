@@ -18,6 +18,11 @@
     {% block head %}{% endblock %}
   </head>
   <body>
+    {# Toasts live outside the swapped region, and ahead of it so the script that
+       fills them always finds this: an in-place navigation must not cut a toast
+       short or lose the element that holds it. #}
+    <div id="toasts" class="toasts" aria-live="polite"></div>
+
     <div class="shell">
       <nav class="rail" aria-label="Sections">
         <a class="rail__mark" href="{{ url_for('jobs.list_jobs') }}">
@@ -64,6 +69,46 @@
               {% endfor %}
             {% endif %}
           {% endwith %}
+
+          {# The banner stays, but an in-place action leaves you where you were —
+             often far below it — so every message is mirrored as a toast you
+             can't miss. This sits inside the swapped region so a swapped-in flash
+             raises one too; the toasts themselves are anchored outside it. #}
+          <script>
+            (function () {
+              var host = document.getElementById("toasts");
+              if (!host) return;
+
+              function dismiss(toast) {
+                if (!toast.parentNode) return;
+                toast.classList.remove("toast--in");
+                setTimeout(function () {
+                  if (toast.parentNode) toast.remove();
+                }, 250);
+              }
+
+              var flashes = document.querySelectorAll(".main__inner .flash");
+              for (var i = 0; i < flashes.length; i++) {
+                var flash = flashes[i];
+                // A swap re-runs this script; never raise the same banner twice.
+                if (flash.dataset.toasted) continue;
+                flash.dataset.toasted = "1";
+
+                (function (text, index) {
+                  var toast = document.createElement("div");
+                  toast.className = "toast";
+                  toast.textContent = text;
+                  toast.title = "Dismiss";
+                  toast.addEventListener("click", function () { dismiss(toast); });
+                  host.appendChild(toast);
+                  // Next frame, so the transition has a start state to move from.
+                  requestAnimationFrame(function () { toast.classList.add("toast--in"); });
+                  // Stagger, so several messages don't vanish in one blink.
+                  setTimeout(function () { dismiss(toast); }, 6000 + index * 500);
+                })(flash.textContent.trim(), i);
+              }
+            })();
+          </script>
 
           {% block content %}{% endblock %}
 

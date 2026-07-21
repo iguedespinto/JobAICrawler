@@ -133,6 +133,16 @@ def test_jobs_list_exclude_combines_with_the_search(app_client, monkeypatch):
     assert "Engineering Manager" not in body
 
 
+def test_pages_carry_the_toast_host(app_client, monkeypatch):
+    """The layout ships the element every flash is mirrored into."""
+    import app.routes_jobs as routes_jobs
+
+    monkeypatch.setattr(routes_jobs, "get_db", lambda: FakeDB(jobs=[], profiles=[]))
+
+    body = app_client.get("/jobs").data.decode("utf-8")
+    assert 'id="toasts"' in body
+
+
 def test_jobs_list_offers_a_cannot_contain_field(app_client, monkeypatch):
     import app.routes_jobs as routes_jobs
 

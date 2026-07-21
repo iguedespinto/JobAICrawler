@@ -578,6 +578,40 @@ table.data tfoot td {
   margin-bottom: 1rem;
 }
 
+/* Toasts — the same message as the banner above, but where the eye is. Dark,
+   like the keyword tooltip, so it reads as a passing notice rather than another
+   panel competing with the page. */
+.toasts {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(26rem, calc(100vw - 2.5rem));
+  pointer-events: none;   /* only the toasts themselves take clicks */
+}
+.toast {
+  pointer-events: auto;
+  cursor: pointer;
+  background: var(--ink);
+  color: #e8ece9;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  opacity: 0;
+  transform: translateY(0.4rem);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.toast--in { opacity: 1; transform: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { transition: none; }
+}
+
 .empty {
   color: var(--ink-muted);
   font-size: 0.875rem;
