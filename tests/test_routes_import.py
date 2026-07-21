@@ -224,6 +224,24 @@ def test_upload_persists_records_in_staging(app_client, monkeypatch):
     assert "Role A" in body and "Role B" in body
 
 
+def test_import_company_name_links_to_filtered_open_view(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    payload = json.dumps(
+        [{"name": "Data Architect", "company": "Kennedy & Partners",
+          "url": "https://example.com/a"}]
+    )
+    assert _upload(app_client, payload).status_code == 302
+
+    body = app_client.get("/import").data.decode("utf-8")
+    # The company name is a link to that company's opportunities. No state is
+    # passed, so the jobs list falls back to its open-by-default view, and it
+    # opens in a new tab so the staging review is not lost.
+    assert 'href="/jobs?company=Kennedy+%26+Partners"' in body
+    assert 'target="_blank"' in body
+
+
 def test_commit_imports_selected_and_removes_from_staging(app_client, monkeypatch):
     fake_db = FakeDB(jobs=[], profiles=[])
     monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)

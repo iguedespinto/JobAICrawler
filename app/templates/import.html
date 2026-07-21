@@ -237,7 +237,18 @@
                       </div>
                     {% endif %}
                   </td>
-                  <td>{{ row.job.company }}</td>
+                  <td>
+                    {% if row.job.company %}
+                      {# Straight to this company's opportunities. No state is
+                         passed, so the list falls back to its open-by-default
+                         view. A new tab on purpose: it leaves you mid-review of
+                         the staging batch rather than swapping it away. #}
+                      <a href="{{ url_for('jobs.list_jobs', company=row.job.company) }}"
+                         target="_blank" rel="noopener">{{ row.job.company }}</a>
+                    {% else %}
+                      {{ row.job.company }}
+                    {% endif %}
+                  </td>
                   <td class="num">
                     {{ row.similarity }}%
                     {% if row.match_label %}
