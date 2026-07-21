@@ -210,6 +210,25 @@ def test_filter_keeps_scroll_without_reloading(server, page):
     assert "state=all" in page.url
 
 
+def test_a_flash_is_mirrored_as_a_toast(server, page):
+    """Every confirmation also pops as a toast, carrying the banner's own words.
+
+    An in-place action leaves you scrolled where you were — often far below the
+    banner at the top of the content — so the toast is what you actually see.
+    """
+    page.goto(server + "/targets")
+    page.wait_for_selector("form.add-form")
+
+    page.eval_on_selector("form.add-form input[name=name]", "el => el.value = 'Toast Test Co'")
+    page.eval_on_selector("form.add-form button[type=submit]", "b => b.click()")
+    page.wait_for_selector(".toast")
+
+    toast = page.eval_on_selector(".toast", "el => el.textContent.trim()")
+    banner = page.eval_on_selector(".main__inner .flash", "el => el.textContent.trim()")
+    assert toast == banner            # the same information as is in the page
+    assert "Toast Test Co" in toast
+
+
 def test_page_styles_travel_with_an_in_place_navigation(server, page):
     """A page's own <head> CSS must arrive with its content.
 
