@@ -275,11 +275,43 @@ def _job_label(title: Any, company: Any) -> str:
     return f"{title} @ {company}" if company else title
 
 
-def _make_candidate(
-    title: Any, company: Any, url: Any, description: Any
-) -> Dict[str, Any]:
-    """Build a comparison candidate (keys + description vector + display fields)."""
-    vec, norm = _description_vector(description)
+def _snippet(text: Any, limit: int = 220) -> str:
+    """A short, single-line preview of a description for the match card."""
+    collapsed = _WHITESPACE.sub(" ", str(text or "").strip())
+    if len(collapsed) <= limit:
+        return collapsed
+    return collapsed[:limit].rstrip() + "…"
+
+
+def _match_card(doc: Dict[str, Any], from_db: bool) -> Dict[str, Any]:
+    """Display fields for the hover card shown over a row's closest-match link.
+
+    Mirrors the job list card: title, company, location, salary, state,
+    keywords and a description snippet. ``job_id`` links the card title through
+    to the matched job's detail page, but only for a database match — an in-file
+    duplicate points at another staged row that has no detail page yet.
+    """
+    return {
+        "job_id": (str(doc["_id"]) if from_db and doc.get("_id") else None),
+        "title": (str(doc.get("title") or "").strip()) or "(untitled)",
+        "company": str(doc.get("company") or "").strip(),
+        "location": str(doc.get("location") or "").strip(),
+        "salary": str(doc.get("salary") or "").strip(),
+        "state": doc.get("state") or STATE_OPEN,
+        "keywords": _as_keywords(doc.get("keywords")),
+        "description": _snippet(doc.get("description_text")),
+    }
+
+
+def _make_candidate(doc: Dict[str, Any], from_db: bool = False) -> Dict[str, Any]:
+    """Build a comparison candidate (keys + description vector + display fields).
+
+    ``doc`` is a job/opportunity dict: an existing database job (``from_db``) or
+    an earlier staged row in the same upload. ``from_db`` decides whether the
+    hover card can link through to a detail page (see :func:`_match_card`).
+    """
+    title, company, url = doc.get("title"), doc.get("company"), doc.get("url")
+    vec, norm = _description_vector(doc.get("description_text"))
     return {
         "url": _identifying_url(url),
         "raw_url": (str(url).strip() if url else ""),
@@ -287,6 +319,7 @@ def _make_candidate(
         "label": _job_label(title, company),
         "vec": vec,
         "norm": norm,
+        "card": _match_card(doc, from_db),
     }
 
 
@@ -298,13 +331,7 @@ def _all_candidates(db) -> List[Dict[str, Any]]:
     keeps dedup total, so a re-imported role matches its existing record instead
     of creating a duplicate.
     """
-    return [
-        _make_candidate(
-            doc.get("title"), doc.get("company"), doc.get("url"),
-            doc.get("description_text"),
-        )
-        for doc in db.jobs.find({})
-    ]
+    return [_make_candidate(doc, from_db=True) for doc in db.jobs.find({})]
 
 
 def _best_similarity(
@@ -380,10 +407,7 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
                 if file_pct >= SIMILARITY_THRESHOLD:
                     status, reason = "duplicate", "similar_in_file"
 
-        candidate = _make_candidate(
-            job.get("title"), job.get("company"), job.get("url"),
-            job.get("description_text"),
-        )
+        candidate = _make_candidate(job, from_db=False)
         seen.append(candidate)
         if url_key:
             seen_urls.setdefault(url_key, candidate)
@@ -399,6 +423,9 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
                 "similarity": similarity,
                 "match_label": match["label"] if match else None,
                 "match_url": match["raw_url"] if match else None,
+                # The card of the matched opportunity, revealed on hover over the
+                # closest-match link. None when there is no match to describe.
+                "match_card": match["card"] if match else None,
                 # Commit will import an open row only when it is new; a closed row
                 # is always actionable (close a definite match, else import as a
                 # closed record). Duplicates within the upload are never selected.
