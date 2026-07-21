@@ -27,7 +27,6 @@ import pytest
 
 # Skip the whole module cleanly when Playwright isn't installed (e.g. in CI).
 pytest.importorskip("playwright.sync_api")
-from playwright.sync_api import sync_playwright  # noqa: E402
 from werkzeug.serving import make_server  # noqa: E402
 from bson import ObjectId  # noqa: E402
 
@@ -125,29 +124,6 @@ def server(monkeypatch):
     finally:
         httpd.shutdown()
         thread.join(timeout=5)
-
-
-@pytest.fixture(scope="session")
-def browser():
-    playwright = sync_playwright().start()
-    try:
-        instance = playwright.chromium.launch()
-    except Exception as exc:  # browser binary not installed
-        playwright.stop()
-        pytest.skip(f"Chromium unavailable ({exc}); run: python -m playwright install chromium")
-    yield instance
-    instance.close()
-    playwright.stop()
-
-
-@pytest.fixture()
-def page(browser):
-    context = browser.new_context()
-    page = context.new_page()
-    try:
-        yield page
-    finally:
-        context.close()
 
 
 def _mark_and_probe(page, scroll_to):
