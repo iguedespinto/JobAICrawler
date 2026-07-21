@@ -127,6 +127,69 @@ def server(monkeypatch):
         thread.join(timeout=5)
 
 
+def _import_seed_db():
+    """One database job plus a staged row that matches it by title + company, so
+    the import table shows a closest-match link carrying a hover card."""
+    existing_id = ObjectId()
+    db = _DB(
+        [
+            {
+                "_id": existing_id,
+                "title": "Data Architect",
+                "company": "Kennedy & Partners Recruitment",
+                "location": "Dublin",
+                "url": "https://example.com/jobs/da",
+                "salary": "70,000-75,000/year",
+                "keywords": ["Analytics", "Data Modelling"],
+                "state": "open",
+                "description_text": (
+                    "Own the enterprise data warehouse roadmap and lead the "
+                    "data platform strategy across the group."
+                ),
+            }
+        ]
+    )
+    db.import_staging = _Collection(
+        [
+            {
+                "_id": ObjectId(),
+                "title": "Data Architect",
+                "company": "Kennedy & Partners Recruitment",
+                "url": "",
+                "salary": "",
+                "keywords": ["Data Architect", "Database Design"],
+                "state": "open",
+                "status": "staged",
+                "staged_at": datetime(2026, 1, 1),
+            }
+        ]
+    )
+    return db, existing_id
+
+
+@pytest.fixture()
+def import_server(monkeypatch):
+    """A real server whose /import page carries a match with a hover card.
+
+    Yields ``(base_url, matched_job_id)`` so the test can assert the card links
+    through to that job's detail page.
+    """
+    monkeypatch.setenv("MONGODB_URI", "")
+    db, existing_id = _import_seed_db()
+    app = create_app()
+    app.extensions["mongo_client"] = _Client(db)
+
+    httpd = make_server("127.0.0.1", 0, app, threaded=True)
+    port = httpd.server_address[1]
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{port}", str(existing_id)
+    finally:
+        httpd.shutdown()
+        thread.join(timeout=5)
+
+
 @pytest.fixture(scope="session")
 def browser():
     playwright = sync_playwright().start()
@@ -258,3 +321,52 @@ def test_opening_a_job_goes_to_the_top(server, page):
 
     assert page.evaluate("window.__probe") == "kept"      # in-place, not a reload
     assert page.evaluate("window.scrollY") == 0           # new page → top
+
+
+def _card_shown(page):
+    return page.eval_on_selector(
+        ".match-card", "el => getComputedStyle(el).display !== 'none'"
+    )
+
+
+def test_match_link_reveals_card_on_hover(import_server, page):
+    """Hovering the closest-match link reveals a card of that opportunity."""
+    base, matched_id = import_server
+    page.goto(base + "/import")
+    page.wait_for_selector(".match-hover")
+
+    # Hidden until hovered.
+    assert _card_shown(page) is False
+
+    page.hover(".match-hover .match-link")
+    page.wait_for_function(
+        "() => { var c = document.querySelector('.match-card');"
+        " return c && getComputedStyle(c).display !== 'none'; }"
+    )
+
+    # The card carries the matched job's own detail (its salary, not the staged
+    # row's — that column is blank) and links through to its detail page.
+    text = page.eval_on_selector(".match-card", "el => el.textContent")
+    assert "70,000-75,000/year" in text
+    assert "data platform strategy" in text
+    href = page.get_attribute(".match-card__title", "href")
+    assert href.endswith("/jobs/" + matched_id)
+
+
+def test_match_card_hides_when_the_pointer_leaves(import_server, page):
+    """Moving off the link (and its card) dismisses the card."""
+    base, _ = import_server
+    page.goto(base + "/import")
+    page.wait_for_selector(".match-hover")
+
+    page.hover(".match-hover .match-link")
+    page.wait_for_function(
+        "() => { var c = document.querySelector('.match-card');"
+        " return c && getComputedStyle(c).display !== 'none'; }"
+    )
+
+    page.hover("h2.section-title")  # somewhere well clear of the link and card
+    page.wait_for_function(
+        "() => { var c = document.querySelector('.match-card');"
+        " return c && getComputedStyle(c).display === 'none'; }"
+    )
