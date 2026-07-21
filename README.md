@@ -116,7 +116,7 @@ working around it:
   the same form or link navigates normally — so never rely on the swap for
   correctness, only for the smoother feel.
 
-Two things to keep in mind when you add UI:
+Three things to keep in mind when you add UI:
 
 - **Page-specific scripts belong in `{% block scripts %}` and must bind to
   elements inside the content.** The block renders within `.main__inner`, so a
@@ -124,6 +124,13 @@ Two things to keep in mind when you add UI:
   `document`- or `window`-level listener will stack a fresh copy on every swap
   unless it guards itself (see the `window.__targetsEditBound` flag in
   `targets.html`).
+- **Page-specific CSS belongs in `{% block head %}`, and travels with the
+  swap.** It renders as a `<style>` in `<head>`, and a swap replaces the
+  outgoing page's with the destination's, so a page always wears its own styles.
+  Only the shared stylesheet is a `<link>` — keep it that way, because every
+  `<style>` in `<head>` is treated as page-owned and replaced wholesale. Getting
+  this wrong is quiet: the page renders in the *previous* page's CSS, which
+  looks fine on a plain page and badly broken on a form.
 - **Opt out only when a link genuinely must leave in-place navigation.**
   External links already carry `target="_blank"` and are skipped; for anything
   else that needs a real browser navigation, add `data-native` to the form or
