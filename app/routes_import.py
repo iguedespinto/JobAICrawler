@@ -721,7 +721,8 @@ def upload():
 
     result = stage_jobs(db, jobs, source=upload_file.filename)
     flash(
-        f"Loaded {result['added']} opportunities from {upload_file.filename}"
+        f"Loaded {result['added']} role{'' if result['added'] == 1 else 's'}"
+        f" from {upload_file.filename}"
         f" ({result['skipped']} already staged)."
     )
     return redirect(url_for("import_jobs.import_form"))
