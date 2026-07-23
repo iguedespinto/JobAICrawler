@@ -290,3 +290,66 @@ def test_the_company_roles_are_not_crowded_together(server, page):
     # Consecutive roles sit clearly apart, not stacked line-on-line.
     spacing = links[1] - links[0]
     assert spacing >= 20, f"roles only {spacing}px apart"
+
+
+def _card_geometry(page):
+    """The shown card's box, and which role links it overlaps."""
+    return page.evaluate(
+        """() => {
+            const card = document.querySelector('.match-card.is-shown').getBoundingClientRect();
+            const links = [...document.querySelectorAll('[data-view="company"] .match-link')]
+                .map(l => l.getBoundingClientRect());
+            const hits = r => !(card.right <= r.left || card.left >= r.right
+                                || card.bottom <= r.top || card.top >= r.bottom);
+            return {
+                card: {left: card.left, right: card.right, top: card.top, bottom: card.bottom},
+                hovered: {left: links[0].left, right: links[0].right},
+                covered: links.map(hits),
+                viewport: [window.innerWidth, window.innerHeight],
+            };
+        }"""
+    )
+
+
+def test_the_card_opens_beside_the_link_not_over_the_other_roles(server, page):
+    """A card dropped underneath buries the rest of the list.
+
+    Hovering one role has to leave the others readable, so the card is placed
+    alongside the link rather than below it.
+    """
+    page.goto(server + "/import")
+    page.wait_for_selector("#staging-table")
+
+    row = _row(page, "AI Engineer")
+    row.locator(".sim-switch").click()
+    row.locator('[data-view="company"] .match-link').first.hover()
+    page.wait_for_selector(".match-card.is-shown")
+
+    geometry = _card_geometry(page)
+
+    # Clear of the hovered link horizontally — beside it, on one side or other.
+    assert (
+        geometry["card"]["right"] <= geometry["hovered"]["left"]
+        or geometry["card"]["left"] >= geometry["hovered"]["right"]
+    ), f"card overlaps its own link: {geometry}"
+
+    # And covering none of the roles, including the one being hovered.
+    assert not any(geometry["covered"]), f"card covers roles: {geometry}"
+
+
+def test_the_card_stays_within_the_viewport(server, page):
+    """Placing it to the side must not push it off an edge."""
+    page.goto(server + "/import")
+    page.wait_for_selector("#staging-table")
+
+    row = _row(page, "AI Engineer")
+    row.locator(".sim-switch").click()
+    row.locator('[data-view="company"] .match-link').first.hover()
+    page.wait_for_selector(".match-card.is-shown")
+
+    g = _card_geometry(page)
+    width, height = g["viewport"]
+    assert g["card"]["left"] >= 0
+    assert g["card"]["right"] <= width
+    assert g["card"]["top"] >= 0
+    assert g["card"]["bottom"] <= height

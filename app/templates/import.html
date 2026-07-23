@@ -549,12 +549,34 @@
         var rect = (link || hover).getBoundingClientRect();
         card.classList.add("is-shown");            // must be shown to measure it
         var margin = 8;
-        var left = Math.max(margin, Math.min(rect.left, window.innerWidth - card.offsetWidth - margin));
-        var top = rect.bottom + 6;
-        // Flip above the link when the card would run off the bottom.
-        if (top + card.offsetHeight > window.innerHeight - margin && rect.top - card.offsetHeight - 6 > margin) {
-          top = rect.top - card.offsetHeight - 6;
+        var gap = 10;
+        var width = card.offsetWidth;
+        var height = card.offsetHeight;
+
+        // Beside the link, never under it: the links can be a list (the
+        // company's other roles), and a card dropped below would bury the ones
+        // you haven't read yet. Left is tried first — this column sits at the
+        // table's right edge, so that is where the room usually is — then the
+        // right; if neither side fits, it goes to the roomier one and is
+        // clamped into view.
+        var roomLeft = rect.left - margin;
+        var roomRight = window.innerWidth - rect.right - margin;
+        var left;
+        if (roomLeft >= width + gap) {
+          left = rect.left - width - gap;
+        } else if (roomRight >= width + gap) {
+          left = rect.right + gap;
+        } else if (roomLeft >= roomRight) {
+          left = margin;
+        } else {
+          left = Math.max(margin, window.innerWidth - width - margin);
         }
+
+        // Top-aligned with the link, nudged back inside if it would overhang.
+        var top = rect.top;
+        if (top + height > window.innerHeight - margin) top = window.innerHeight - height - margin;
+        if (top < margin) top = margin;
+
         card.style.left = left + "px";
         card.style.top = top + "px";
         shown = card;
