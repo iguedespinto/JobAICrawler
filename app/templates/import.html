@@ -202,9 +202,10 @@
     .sim-switch[aria-pressed="true"] { color: var(--pine); border-color: var(--pine-tint); background: var(--pine-wash); }
     .sim-view[hidden] { display: none; }
 
-    /* The list is prose in a right-aligned numeric column, so it re-aligns
-       itself, and scrolls once a company has more roles than fit. */
-    .company-view { text-align: left; }
+    /* The list keeps the column's right alignment, like the suggestion above
+       it — which is also what leaves clear space to its right for the hover
+       card to open into. It scrolls once a company has more roles than fit. */
+    .company-view { text-align: right; }
     .company-view__head {
       font-family: var(--font-mono);
       font-size: 0.6875rem;
@@ -219,6 +220,7 @@
       overflow-y: auto;
       display: flex;
       flex-direction: column;
+      align-items: flex-end;   /* each role flush to the column's right edge */
       gap: 0.4rem;
       font-size: 0.75rem;
       white-space: normal;
@@ -547,6 +549,12 @@
         if (shown && shown !== card) shown.classList.remove("is-shown");
         var link = hover.querySelector(".match-link");
         var rect = (link || hover).getBoundingClientRect();
+        // The roles are right-aligned, so every link ends at the same x: going
+        // right, clearing the hovered link clears all of them. Going left is
+        // different — a longer neighbour reaches further left than the one under
+        // the pointer — so that side is measured from the whole column instead.
+        var host = hover.closest("td") || link || hover;
+        var hostRect = host.getBoundingClientRect();
         card.classList.add("is-shown");            // must be shown to measure it
         var margin = 8;
         var gap = 10;
@@ -555,21 +563,22 @@
 
         // Beside the link, never under it: the links can be a list (the
         // company's other roles), and a card dropped below would bury the ones
-        // you haven't read yet. Left is tried first — this column sits at the
-        // table's right edge, so that is where the room usually is — then the
-        // right; if neither side fits, it goes to the roomier one and is
-        // clamped into view.
-        var roomLeft = rect.left - margin;
+        // you haven't read yet. The right is tried first — the links are flush
+        // to this column's right edge, and the margin beyond the table is empty,
+        // so a card there covers nothing. Falling left keeps it off the roles on
+        // a window too narrow for that; if neither side fits it goes to the
+        // roomier one and is clamped into view.
+        var roomLeft = hostRect.left - margin;
         var roomRight = window.innerWidth - rect.right - margin;
         var left;
-        if (roomLeft >= width + gap) {
-          left = rect.left - width - gap;
-        } else if (roomRight >= width + gap) {
+        if (roomRight >= width + gap) {
           left = rect.right + gap;
-        } else if (roomLeft >= roomRight) {
-          left = margin;
-        } else {
+        } else if (roomLeft >= width + gap) {
+          left = hostRect.left - width - gap;
+        } else if (roomRight >= roomLeft) {
           left = Math.max(margin, window.innerWidth - width - margin);
+        } else {
+          left = margin;
         }
 
         // Top-aligned with the link, nudged back inside if it would overhang.

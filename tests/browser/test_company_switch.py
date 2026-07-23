@@ -353,3 +353,64 @@ def test_the_card_stays_within_the_viewport(server, page):
     assert g["card"]["right"] <= width
     assert g["card"]["top"] >= 0
     assert g["card"]["bottom"] <= height
+
+
+def test_the_roles_list_is_right_aligned(server, page):
+    """The roles sit flush to the column's right edge, like the suggestion.
+
+    That is what leaves clear space to their right for the card to open into.
+    """
+    page.goto(server + "/import")
+    page.wait_for_selector("#staging-table")
+
+    row = _row(page, "AI Engineer")
+    row.locator(".sim-switch").click()
+
+    edges = page.eval_on_selector(
+        "td.sim-cell",
+        """cell => {
+            const links = [...cell.querySelectorAll('.company-list .match-link')];
+            const inner = cell.getBoundingClientRect().right
+                - parseFloat(getComputedStyle(cell).paddingRight);
+            return {rights: links.map(l => l.getBoundingClientRect().right), inner};
+        }""",
+    )
+
+    # Every role ends at the same x — and that x is the column's inner edge.
+    assert len(set(round(r) for r in edges["rights"])) == 1
+    assert abs(edges["rights"][0] - edges["inner"]) < 2
+
+
+def test_the_card_opens_to_the_right_of_the_roles_when_there_is_room(server, page):
+    """With space beside the column, the card goes right — clear of the table."""
+    page.set_viewport_size({"width": 1700, "height": 900})
+    page.goto(server + "/import")
+    page.wait_for_selector("#staging-table")
+
+    row = _row(page, "AI Engineer")
+    row.locator(".sim-switch").click()
+    row.locator('[data-view="company"] .match-link').first.hover()
+    page.wait_for_selector(".match-card.is-shown")
+
+    g = _card_geometry(page)
+    assert g["card"]["left"] >= g["hovered"]["right"], f"not to the right: {g}"
+    assert not any(g["covered"]), f"card covers roles: {g}"
+
+
+def test_the_card_falls_back_to_the_left_when_the_right_is_too_tight(server, page):
+    """On a narrow window there is no room to the right, so it goes left.
+
+    Either way it must not land on top of the roles.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(server + "/import")
+    page.wait_for_selector("#staging-table")
+
+    row = _row(page, "AI Engineer")
+    row.locator(".sim-switch").click()
+    row.locator('[data-view="company"] .match-link').first.hover()
+    page.wait_for_selector(".match-card.is-shown")
+
+    g = _card_geometry(page)
+    assert g["card"]["right"] <= g["hovered"]["left"], f"not to the left: {g}"
+    assert not any(g["covered"]), f"card covers roles: {g}"
