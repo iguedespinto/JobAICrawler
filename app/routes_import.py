@@ -334,6 +334,30 @@ def _all_candidates(db) -> List[Dict[str, Any]]:
     return [_make_candidate(doc, from_db=True) for doc in db.jobs.find({})]
 
 
+def _open_jobs_by_company(
+    candidates: List[Dict[str, Any]]
+) -> Dict[str, List[Dict[str, Any]]]:
+    """Index the open stored jobs by normalized company, each list title-sorted.
+
+    Built from the candidates the matching already loaded, so the company view
+    costs no extra pass over the jobs and its entries carry the very same match
+    card the suggestion link shows. Closed roles are left out: the switch offers
+    what you could still apply to. A job with no company can't be grouped.
+    """
+    by_company: Dict[str, List[Dict[str, Any]]] = {}
+    for cand in candidates:
+        card = cand["card"]
+        if card["state"] != STATE_OPEN:
+            continue
+        key = _normalize_text(card["company"])
+        if not key:
+            continue
+        by_company.setdefault(key, []).append(cand)
+    for group in by_company.values():
+        group.sort(key=lambda c: c["card"]["title"].lower())
+    return by_company
+
+
 def _best_similarity(
     vec: Counter, norm: float, candidates: List[Dict[str, Any]]
 ) -> Tuple[int, Optional[Dict[str, Any]]]:
@@ -364,6 +388,7 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
     db_candidates = _all_candidates(db)
     db_urls = {c["url"]: c for c in db_candidates if c["url"]}
     db_tc = {c["tc"]: c for c in db_candidates}
+    by_company = _open_jobs_by_company(db_candidates)
     seen: List[Dict[str, Any]] = []
     seen_urls: Dict[str, Dict[str, Any]] = {}
     seen_tc: Dict[str, Dict[str, Any]] = {}
@@ -413,6 +438,16 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
             seen_urls.setdefault(url_key, candidate)
         seen_tc.setdefault(tc_key, candidate)
 
+        # The company's other open roles, for the Similarity cell's second view.
+        # ``match`` is the very object the index holds when the suggestion came
+        # from the database, so identity alone drops it from "other" — no need
+        # for an id the fixtures may not carry.
+        company_jobs = [
+            {"url": cand["raw_url"], "label": cand["label"], "card": cand["card"]}
+            for cand in by_company.get(_normalize_text(job.get("company")), [])
+            if cand is not match
+        ]
+
         state = job.get("state") or STATE_OPEN
         rows.append(
             {
@@ -433,6 +468,9 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
                 # The card of the matched opportunity, revealed on hover over the
                 # closest-match link. None when there is no match to describe.
                 "match_card": match["card"] if match else None,
+                # Other open roles already stored for this row's company. Drives
+                # the switch in the Similarity cell; empty means no switch.
+                "company_jobs": company_jobs,
                 # Commit will import an open row only when it is new; a closed row
                 # is always actionable (close a definite match, else import as a
                 # closed record). Duplicates within the upload are never selected.

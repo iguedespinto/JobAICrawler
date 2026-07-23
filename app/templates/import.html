@@ -1,5 +1,34 @@
 {% extends "_layout.html" %}
 
+{# The hover card for a stored opportunity. Defined once and used by both views
+   of the Similarity cell — the system's suggestion and the list of the
+   company's other open roles — so the two can't drift apart. #}
+{% macro match_card(card) %}
+  <span class="match-card" role="tooltip">
+    <span class="match-card__head">
+      {% if card.job_id %}
+        <a class="match-card__title" href="{{ url_for('jobs.get_job', job_id=card.job_id) }}">{{ card.title }}</a>
+      {% else %}
+        <span class="match-card__title">{{ card.title }}</span>
+      {% endif %}
+      <span class="badge {{ card.state }}">{{ card.state }}</span>
+    </span>
+    {% if card.company %}<span class="match-card__company">{{ card.company }}</span>{% endif %}
+    {% if card.location or card.salary %}
+      <span class="match-card__meta">
+        {% if card.location %}<span>{{ card.location }}</span>{% endif %}
+        {% if card.salary %}<span><strong>{{ card.salary }}</strong></span>{% endif %}
+      </span>
+    {% endif %}
+    {% if card.keywords %}
+      <span class="match-card__keywords">
+        {% for keyword in card.keywords %}<span class="tag">{{ keyword }}</span>{% endfor %}
+      </span>
+    {% endif %}
+    {% if card.description %}<span class="match-card__desc">{{ card.description }}</span>{% endif %}
+  </span>
+{% endmacro %}
+
 {% block title %}Import · Job AI Crawler{% endblock %}
 {% block eyebrow %}
   <div class="eyebrow">{{ summary.total }} staged · {{ summary.pending }} queued</div>
@@ -146,6 +175,55 @@
       cursor: pointer;
     }
     .context-menu__item:hover { background: var(--pine-wash); color: var(--pine-deep); }
+
+    /* The Similarity cell holds two views — the system's suggestion and the
+       company's other open roles — and a switch between them. The switch sits
+       in the top-left, where the right-aligned percentage never reaches. */
+    /* The gutter the absolutely-positioned switch sits in. Qualified up to
+       `table.data td.sim-cell` on purpose: the shared `table.data td` padding
+       rule is more specific than a bare `.sim-cell`, and would otherwise win
+       and drop the icon on top of the first line of text. */
+    table.data td.sim-cell { position: relative; padding-left: 2.15rem; }
+    .sim-switch {
+      position: absolute;
+      top: 0.4rem;
+      left: 0.35rem;
+      display: inline-flex;
+      padding: 0.15rem;
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 2px;
+      color: var(--ink-faint);
+      cursor: pointer;
+      line-height: 0;
+    }
+    .sim-switch svg { width: 14px; height: 14px; }
+    .sim-switch:hover { color: var(--pine); border-color: var(--pine-tint); background: var(--pine-wash); }
+    .sim-switch[aria-pressed="true"] { color: var(--pine); border-color: var(--pine-tint); background: var(--pine-wash); }
+    .sim-view[hidden] { display: none; }
+
+    /* The list is prose in a right-aligned numeric column, so it re-aligns
+       itself, and scrolls once a company has more roles than fit. */
+    .company-view { text-align: left; }
+    .company-view__head {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--ink-faint);
+      margin-bottom: 0.45rem;
+    }
+    .company-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      max-height: 9rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      font-size: 0.75rem;
+      white-space: normal;
+    }
+    .company-list li { line-height: 1.45; }
   </style>
 {% endblock %}
 
@@ -345,46 +423,73 @@
                       {{ row.job.company }}
                     {% endif %}
                   </td>
-                  <td class="num">
-                    {{ row.similarity }}%
-                    {% if row.match_label %}
-                      {# The closest match, with a card of that opportunity
-                         revealed on hover/focus (see the script below). The link
-                         itself still goes to the posting; the card is a preview. #}
-                      <div class="reason match">
-                        <span class="match-hover">
-                          {% if row.match_url %}
-                            <a href="{{ row.match_url }}" target="_blank" rel="noopener" class="match-link">{{ row.match_label }}</a>
-                          {% else %}
-                            <span class="match-link" tabindex="0">{{ row.match_label }}</span>
-                          {% endif %}
-                          {% if row.match_card %}
-                            {% set card = row.match_card %}
-                            <span class="match-card" role="tooltip">
-                              <span class="match-card__head">
-                                {% if card.job_id %}
-                                  <a class="match-card__title" href="{{ url_for('jobs.get_job', job_id=card.job_id) }}">{{ card.title }}</a>
+                  <td class="num sim-cell">
+                    {% if row.company_jobs %}
+                      {# Only offered when there is something to switch to. Sits
+                         in the cell's top-left, clear of the right-aligned
+                         percentage. #}
+                      <button type="button" class="sim-switch" data-action="toggle-company"
+                              aria-pressed="false"
+                              title="Show other open roles at {{ row.job.company }}"
+                              aria-label="Show other open roles at {{ row.job.company }}">
+                        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                          <path d="M4.5 12a7.5 7.5 0 0 1 7.5-7.5c2.3 0 4.4 1.05 5.8 2.7"
+                                fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" />
+                          <polyline points="17.5 3.2 17.5 7.4 13.3 7.4" fill="none"
+                                    stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                          <path d="M19.5 12a7.5 7.5 0 0 1-7.5 7.5c-2.3 0-4.4-1.05-5.8-2.7"
+                                fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" />
+                          <polyline points="6.5 20.8 6.5 16.6 10.7 16.6" fill="none"
+                                    stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </button>
+                    {% endif %}
+
+                    <div class="sim-view" data-view="suggestion">
+                      {{ row.similarity }}%
+                      {% if row.match_label %}
+                        {# The closest match, with a card of that opportunity
+                           revealed on hover/focus (see the script below). The link
+                           itself still goes to the posting; the card is a preview. #}
+                        <div class="reason match">
+                          <span class="match-hover">
+                            {% if row.match_url %}
+                              <a href="{{ row.match_url }}" target="_blank" rel="noopener" class="match-link">{{ row.match_label }}</a>
+                            {% else %}
+                              <span class="match-link" tabindex="0">{{ row.match_label }}</span>
+                            {% endif %}
+                            {% if row.match_card %}{{ match_card(row.match_card) }}{% endif %}
+                          </span>
+                        </div>
+                      {% endif %}
+                    </div>
+
+                    {% if row.company_jobs %}
+                      {# The same company's other open roles. Each link carries
+                         the identical hover card, by way of the shared macro. #}
+                      <div class="sim-view company-view" data-view="company" hidden>
+                        <div class="company-view__head">
+                          {{ row.company_jobs | length }} other open
+                          role{{ '' if row.company_jobs | length == 1 else 's' }}
+                        </div>
+                        <ul class="company-list">
+                          {% for item in row.company_jobs %}
+                            <li>
+                              <span class="match-hover">
+                                {% if item.url %}
+                                  <a href="{{ item.url }}" target="_blank" rel="noopener" class="match-link">{{ item.card.title }}</a>
                                 {% else %}
-                                  <span class="match-card__title">{{ card.title }}</span>
+                                  <span class="match-link" tabindex="0">{{ item.card.title }}</span>
                                 {% endif %}
-                                <span class="badge {{ card.state }}">{{ card.state }}</span>
+                                {{ match_card(item.card) }}
                               </span>
-                              {% if card.company %}<span class="match-card__company">{{ card.company }}</span>{% endif %}
-                              {% if card.location or card.salary %}
-                                <span class="match-card__meta">
-                                  {% if card.location %}<span>{{ card.location }}</span>{% endif %}
-                                  {% if card.salary %}<span><strong>{{ card.salary }}</strong></span>{% endif %}
-                                </span>
-                              {% endif %}
-                              {% if card.keywords %}
-                                <span class="match-card__keywords">
-                                  {% for keyword in card.keywords %}<span class="tag">{{ keyword }}</span>{% endfor %}
-                                </span>
-                              {% endif %}
-                              {% if card.description %}<span class="match-card__desc">{{ card.description }}</span>{% endif %}
-                            </span>
-                          {% endif %}
-                        </span>
+                            </li>
+                          {% endfor %}
+                        </ul>
                       </div>
                     {% endif %}
                   </td>
@@ -430,6 +535,11 @@
 
       var shown = null;
       var hideTimer = null;
+      // Where the page stood when the card was placed. A scroll event reporting
+      // this same position is the tail of a scroll that had already finished —
+      // bringing a link into view, say — not the reader scrolling away, so it
+      // must not dismiss a card that has only just appeared.
+      var placedAt = null;
 
       function place(hover) {
         var card = hover.querySelector(".match-card");
@@ -439,19 +549,43 @@
         var rect = (link || hover).getBoundingClientRect();
         card.classList.add("is-shown");            // must be shown to measure it
         var margin = 8;
-        var left = Math.max(margin, Math.min(rect.left, window.innerWidth - card.offsetWidth - margin));
-        var top = rect.bottom + 6;
-        // Flip above the link when the card would run off the bottom.
-        if (top + card.offsetHeight > window.innerHeight - margin && rect.top - card.offsetHeight - 6 > margin) {
-          top = rect.top - card.offsetHeight - 6;
+        var gap = 10;
+        var width = card.offsetWidth;
+        var height = card.offsetHeight;
+
+        // Beside the link, never under it: the links can be a list (the
+        // company's other roles), and a card dropped below would bury the ones
+        // you haven't read yet. Left is tried first — this column sits at the
+        // table's right edge, so that is where the room usually is — then the
+        // right; if neither side fits, it goes to the roomier one and is
+        // clamped into view.
+        var roomLeft = rect.left - margin;
+        var roomRight = window.innerWidth - rect.right - margin;
+        var left;
+        if (roomLeft >= width + gap) {
+          left = rect.left - width - gap;
+        } else if (roomRight >= width + gap) {
+          left = rect.right + gap;
+        } else if (roomLeft >= roomRight) {
+          left = margin;
+        } else {
+          left = Math.max(margin, window.innerWidth - width - margin);
         }
+
+        // Top-aligned with the link, nudged back inside if it would overhang.
+        var top = rect.top;
+        if (top + height > window.innerHeight - margin) top = window.innerHeight - height - margin;
+        if (top < margin) top = margin;
+
         card.style.left = left + "px";
         card.style.top = top + "px";
         shown = card;
+        placedAt = { x: window.scrollX, y: window.scrollY };
       }
 
       function hide() {
         if (shown) { shown.classList.remove("is-shown"); shown = null; }
+        placedAt = null;
       }
       function cancelHide() { if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; } }
       function scheduleHide() { cancelHide(); hideTimer = setTimeout(hide, 140); }
@@ -481,10 +615,60 @@
         var hover = e.target.closest(".match-hover");
         if (hover && !stays(e, hover)) scheduleHide();
       });
-      // A scroll leaves a fixed card stranded away from its link, so drop it.
-      window.addEventListener("scroll", function () { cancelHide(); hide(); }, true);
+      // A scroll leaves a fixed card stranded away from its link, so drop it —
+      // but only a scroll that actually moves the page (see ``placedAt``).
+      window.addEventListener("scroll", function () {
+        if (!placedAt) return;
+        if (window.scrollX !== placedAt.x || window.scrollY !== placedAt.y) {
+          cancelHide();
+          hide();
+        }
+      }, true);
       document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") hide();
+      });
+    })();
+
+    // The Similarity cell's switch: the system's suggestion, or the other open
+    // roles at the same company. Per row, because each row has its own company,
+    // and transient — it is a look, not a setting. Delegated on document and
+    // bound once, so an in-place swap (see nav.js) re-running this script never
+    // stacks a second handler; the markup carries the state, so a swapped-in
+    // table simply starts on the suggestion again. Without JS the cell shows
+    // the suggestion exactly as it always did.
+    (function () {
+      "use strict";
+      if (window.__simSwitchBound) return;
+      window.__simSwitchBound = true;
+
+      document.addEventListener("click", function (e) {
+        if (!e.target.closest) return;
+        var button = e.target.closest('[data-action="toggle-company"]');
+        if (!button) return;
+        e.preventDefault();
+
+        var cell = button.closest(".sim-cell");
+        if (!cell) return;
+        var suggestion = cell.querySelector('[data-view="suggestion"]');
+        var company = cell.querySelector('[data-view="company"]');
+        if (!suggestion || !company) return;
+
+        // Keep the rendered wording ("Show other open roles at Acme") so the
+        // way back can restore it verbatim. Stashed before it is overwritten.
+        if (!button.hasAttribute("data-suggest-label")) {
+          button.setAttribute("data-suggest-label", button.getAttribute("title") || "");
+        }
+
+        var showCompany = company.hidden;
+        company.hidden = !showCompany;
+        suggestion.hidden = showCompany;
+
+        var label = showCompany
+          ? "Show the suggested match"
+          : button.getAttribute("data-suggest-label");
+        button.setAttribute("aria-pressed", showCompany ? "true" : "false");
+        button.setAttribute("title", label);
+        button.setAttribute("aria-label", label);
       });
     })();
 
