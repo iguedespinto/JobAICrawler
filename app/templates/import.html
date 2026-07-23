@@ -35,9 +35,9 @@
 {% endblock %}
 {% block page_title %}Import{% endblock %}
 {% block lede %}
-  <p class="page-lede">Opportunities are prepared outside and brought in here.
+  <p class="page-lede">Roles are prepared outside and brought in here.
     Loaded records wait in the staging area — across uploads — until you import
-    or clear them, each matched against the jobs already in the database and
+    or clear them, each matched against the roles already in the database and
     against the other staged records.</p>
 {% endblock %}
 
@@ -236,7 +236,7 @@
       <p class="hint" style="margin-bottom: 0.75rem;">A JSON array of objects (a single object is also accepted).</p>
       <div class="panel">
         <form method="post" action="{{ url_for('import_jobs.upload') }}" enctype="multipart/form-data" class="upload">
-          <input type="file" name="import_file" accept=".json,application/json" aria-label="JSON file of opportunities" />
+          <input type="file" name="import_file" accept=".json,application/json" aria-label="JSON file of roles" />
           <button type="submit" class="btn">Load file</button>
         </form>
         <pre class="well" style="margin-top: 1rem;">[
@@ -246,26 +246,27 @@
     "url": "https://example.com/jobs/123",
     "salary": "€90,000 - €100,000/year",
     "description": "Full job description text...",
-    "keywords": ["Python", "Flask", "MongoDB"],
+    "skills": ["Python", "Flask", "MongoDB"],
     "state": "open"
   }
 ]</pre>
         <p class="hint" style="margin-top: 0.75rem;"><code>state</code> is optional and
-          defaults to <code>open</code>. A <code>closed</code> opportunity closes the
-          matching job if one exists, otherwise it lands as a closed record kept for
-          keyword analysis.</p>
+          defaults to <code>open</code>. A <code>closed</code> role closes the
+          matching role if one exists, otherwise it lands as a closed record kept for
+          skill analysis. <code>skills</code> may also be written
+          <code>keywords</code> — both are read.</p>
       </div>
     </section>
 
     <section>
       <h2 class="section-title">Pending URLs</h2>
-      <p class="hint" style="margin-bottom: 0.75rem;">Paste job posting URLs, one
-        per line, to queue them for processing. Each is checked against imported jobs
+      <p class="hint" style="margin-bottom: 0.75rem;">Paste role posting URLs, one
+        per line, to queue them for processing. Each is checked against imported roles
         and staged records, then held here — out of the staging table below — until an
         MCP client retrieves, validates and imports it, at which point it becomes a
-        viewable opportunity. URLs are reduced to their base (tracking parameters are
+        viewable role. URLs are reduced to their base (tracking parameters are
         stripped), and search-results pages are rejected. Queuing a URL marks the
-        resulting opportunity <strong>Saved</strong>, putting it on your radar.</p>
+        resulting role <strong>Saved</strong>, putting it on your radar.</p>
 
       <div class="panel">
         <form method="post" action="{{ url_for('import_jobs.add_urls') }}">
@@ -330,10 +331,10 @@
           </div>
         </div>
 
-        <p class="hint" style="margin-bottom: 0.75rem;">New opportunities are
+        <p class="hint" style="margin-bottom: 0.75rem;">New roles are
           pre-selected; likely duplicates (description similarity &ge;
-          {{ summary.threshold }}%) are not. Closed opportunities are pre-selected
-          too — importing one closes the matching job, or records it as closed for
+          {{ summary.threshold }}%) are not. Closed roles are pre-selected
+          too — importing one closes the matching role, or records it as closed for
           analysis if there is no match.</p>
 
         {# Hiding 100% matches is a view filter, so it lives with the table
@@ -351,7 +352,7 @@
         <!-- Forms are empty; their controls/checkboxes reference them via form="...". -->
         <form id="commit-form" method="post" action="{{ url_for('import_jobs.commit') }}"></form>
         <form id="clear-form" method="post" action="{{ url_for('import_jobs.clear') }}"
-              onsubmit="return confirm('Clear all {{ summary.total }} staged opportunities?');"></form>
+              onsubmit="return confirm('Clear all {{ summary.total }} staged roles?');"></form>
 
         <div class="table-wrap" id="staging-list">
           <table class="data" id="staging-table">
@@ -394,7 +395,7 @@
                     {% elif row.state == 'closed' %}
                       <div class="action create">creates closed record</div>
                     {% elif row.status == 'new' %}
-                      <div class="action create">creates opportunity</div>
+                      <div class="action create">creates role</div>
                     {% else %}
                       <div class="action none">matches existing</div>
                     {% endif %}

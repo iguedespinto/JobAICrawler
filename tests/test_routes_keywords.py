@@ -209,5 +209,5 @@ def test_manage_page_renders(app_client, monkeypatch):
     resp = app_client.get("/keywords/manage")
     assert resp.status_code == 200
     body = resp.data.decode("utf-8")
-    assert "Keyword Groups" in body
+    assert "Skill Groups" in body
     assert "JavaScript" in body

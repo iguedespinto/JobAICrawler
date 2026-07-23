@@ -1,12 +1,12 @@
 {% extends "_layout.html" %}
 
-{% block title %}Keyword Groups · Job AI Crawler{% endblock %}
-{% block page_title %}Keyword Groups{% endblock %}
+{% block title %}Skill Groups · Job AI Crawler{% endblock %}
+{% block page_title %}Skill Groups{% endblock %}
 {% block lede %}
   <p class="page-lede">A group collects spellings of the same thing — <em>js</em>,
     <em>JavaScript</em>, <em>ECMAScript</em> — under one display name, so the
-    <a href="{{ url_for('dashboard.view_dashboard') }}">keyword counts</a> stop
-    splitting one skill across three rows. Drag one keyword onto another in the
+    <a href="{{ url_for('dashboard.view_dashboard') }}">skill counts</a> stop
+    splitting one skill across three rows. Drag one skill onto another in the
     cloud to make a group.</p>
 {% endblock %}
 
@@ -56,15 +56,15 @@
       </table>
     </div>
   {% else %}
-    <p class="empty">No keyword groups yet. Drag one keyword onto another in the
-      <a href="{{ url_for('dashboard.view_dashboard') }}">keyword cloud</a> to make one.</p>
+    <p class="empty">No skill groups yet. Drag one skill onto another in the
+      <a href="{{ url_for('dashboard.view_dashboard') }}">skill cloud</a> to make one.</p>
   {% endif %}
 {% endblock %}
 
 {% block scripts %}
     <script>
       function deleteGroup(id, name) {
-        if (!confirm('Delete the group "' + name + '"?\n\nIts variants will appear as independent keywords again.')) return;
+        if (!confirm('Delete the group "' + name + '"?\n\nIts variants will appear as independent skills again.')) return;
         fetch('/keywords/groups/' + id, { method: 'DELETE' })
           .then(function (r) { return r.json(); })
           .then(function (data) {
