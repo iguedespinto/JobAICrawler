@@ -1,6 +1,6 @@
 {% extends "_layout.html" %}
 
-{# The hover card for a stored opportunity. Defined once and used by both views
+{# The hover card for a stored role. Defined once and used by both views
    of the Similarity cell — the system's suggestion and the list of the
    company's other open roles — so the two can't drift apart. #}
 {% macro match_card(card) %}
@@ -46,7 +46,7 @@
     .upload { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
     .upload input[type="file"] { font-size: 0.8125rem; }
 
-    /* The staging composition, drawn on the same measure as keyword share:
+    /* The staging composition, drawn on the same measure as skill share:
        one bar showing what a batch is made of before you commit it. */
     .composition { margin: 0.5rem 0 1rem; }
     .composition__bar {
@@ -92,7 +92,7 @@
     .row-title { font-weight: 600; }
     .actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; flex-wrap: wrap; }
 
-    /* The closest-match link carries a card of that opportunity, shown on hover
+    /* The closest-match link carries a card of that role, shown on hover
        or focus. The staging table clips its own overflow (overflow-x: auto), so
        the card is fixed-positioned by the script below to escape the clip; here
        it is only laid out and kept hidden until shown. Absent the script it
@@ -128,7 +128,7 @@
 
     /* Hiding 100% matches. The rows stay in the DOM with their checkboxes
        intact — this is a view filter, not a change to what gets imported, so a
-       hidden closed match still closes its job on commit. */
+       hidden closed match still closes its role on commit. */
     .staging-tools {
       display: flex;
       align-items: center;
@@ -416,7 +416,7 @@
                   </td>
                   <td>
                     {% if row.job.company %}
-                      {# Straight to this company's opportunities. No state is
+                      {# Straight to this company's roles. No state is
                          passed, so the list falls back to its open-by-default
                          view. A new tab on purpose: it leaves you mid-review of
                          the staging batch rather than swapping it away. #}
@@ -455,7 +455,7 @@
                     <div class="sim-view" data-view="suggestion">
                       {{ row.similarity }}%
                       {% if row.match_label %}
-                        {# The closest match, with a card of that opportunity
+                        {# The closest match, with a card of that role
                            revealed on hover/focus (see the script below). The link
                            itself still goes to the posting; the card is a preview. #}
                         <div class="reason match">

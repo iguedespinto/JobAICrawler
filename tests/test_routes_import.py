@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 
 from bson import ObjectId
 
@@ -1202,3 +1203,47 @@ def test_parse_jobs_accepts_a_comma_separated_skills_string():
     jobs = routes_import.parse_jobs(raw)
 
     assert jobs[0]["keywords"] == ["Python", "Flask"]
+
+
+def _visible_text(html: str) -> str:
+    """The page with its scripts, styles and comments taken out."""
+    stripped = re.sub(r"<(script|style)\b.*?</\1>", " ", html, flags=re.S | re.I)
+    stripped = re.sub(r"<!--.*?-->", " ", stripped, flags=re.S)
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", stripped))
+
+
+def test_upload_flash_reports_roles_not_opportunities(app_client, monkeypatch):
+    """The banner after a load speaks the interface's vocabulary.
+
+    This one was missed in the rename because the wording sits on a different
+    line from its ``flash(`` call, out of reach of a single-line search.
+    """
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    payload = json.dumps(
+        [{"name": "Role A", "company": "Acme", "url": "https://example.com/a"}]
+    )
+    _upload(app_client, payload, filename="offers.json")
+
+    body = app_client.get("/import").data.decode("utf-8")
+    assert "Loaded 1 role from offers.json" in body
+    # Nothing the reader can see still says "opportunity". Scripts, styles and
+    # comments are excluded: they are code, not copy.
+    assert "opportunit" not in _visible_text(body).lower()
+
+
+def test_upload_flash_pluralises_roles(app_client, monkeypatch):
+    fake_db = FakeDB(jobs=[], profiles=[])
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+
+    payload = json.dumps(
+        [
+            {"name": "Role A", "company": "Acme", "url": "https://example.com/a"},
+            {"name": "Role B", "company": "Beta", "url": "https://example.com/b"},
+        ]
+    )
+    _upload(app_client, payload, filename="offers.json")
+
+    body = app_client.get("/import").data.decode("utf-8")
+    assert "Loaded 2 roles from offers.json" in body
