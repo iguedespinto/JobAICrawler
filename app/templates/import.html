@@ -96,6 +96,56 @@
     .match-card__meta strong { color: var(--ink); font-weight: 600; }
     .match-card__keywords { display: flex; flex-wrap: wrap; gap: 0.3rem; }
     .match-card__desc { font-size: 0.8125rem; line-height: 1.5; color: var(--ink-muted); }
+
+    /* Hiding 100% matches. The rows stay in the DOM with their checkboxes
+       intact — this is a view filter, not a change to what gets imported, so a
+       hidden closed match still closes its job on commit. */
+    .staging-tools {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.75rem;
+    }
+    .btn-quiet {
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      padding: 0.25rem 0.6rem;
+      background: var(--surface);
+      color: var(--ink);
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius);
+      cursor: pointer;
+    }
+    .btn-quiet:hover { border-color: var(--pine); color: var(--pine-deep); background: var(--pine-wash); }
+    .btn-quiet[aria-pressed="true"] { background: var(--pine); border-color: var(--pine); color: #fff; }
+    #staging-table.is-hiding-full tbody tr[data-full-match] { display: none; }
+
+    .context-menu {
+      position: fixed;
+      z-index: 70;
+      min-width: 13rem;
+      padding: 0.25rem;
+      background: var(--surface);
+      border: 1px solid var(--rule-strong);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .context-menu[hidden] { display: none; }
+    .context-menu__item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      font-family: var(--font-body);
+      font-size: 0.8125rem;
+      padding: 0.35rem 0.55rem;
+      background: none;
+      border: 0;
+      border-radius: 2px;
+      color: var(--ink);
+      cursor: pointer;
+    }
+    .context-menu__item:hover { background: var(--pine-wash); color: var(--pine-deep); }
   </style>
 {% endblock %}
 
@@ -206,13 +256,25 @@
           too — importing one closes the matching job, or records it as closed for
           analysis if there is no match.</p>
 
+        {# Hiding 100% matches is a view filter, so it lives with the table
+           rather than with the commit buttons. The same action sits in the
+           right-click menu below; this control is what makes it discoverable
+           and keyboard-reachable. #}
+        <div class="staging-tools">
+          <button type="button" class="btn-quiet" data-action="toggle-full-matches"
+                  data-full-match-count="{{ summary.full_match }}" aria-pressed="false">
+            Hide 100% matches ({{ summary.full_match }})
+          </button>
+          <span class="hint">Rows needing no decision. Right-click the list for the same menu.</span>
+        </div>
+
         <!-- Forms are empty; their controls/checkboxes reference them via form="...". -->
         <form id="commit-form" method="post" action="{{ url_for('import_jobs.commit') }}"></form>
         <form id="clear-form" method="post" action="{{ url_for('import_jobs.clear') }}"
               onsubmit="return confirm('Clear all {{ summary.total }} staged opportunities?');"></form>
 
-        <div class="table-wrap">
-          <table class="data">
+        <div class="table-wrap" id="staging-list">
+          <table class="data" id="staging-table">
             <thead>
               <tr>
                 <th>Import</th>
@@ -226,7 +288,7 @@
             </thead>
             <tbody>
               {% for row in rows %}
-                <tr class="{{ row.status }}">
+                <tr class="{{ row.status }}"{% if row.full_match %} data-full-match="1"{% endif %}>
                   <td>
                     <input type="checkbox" name="select" value="{{ row.id }}" form="commit-form"
                            aria-label="Import {{ row.job.title }}"
@@ -333,6 +395,13 @@
           </table>
         </div>
 
+        {# The right-click menu for the staging list. Hidden until summoned and
+           fixed-positioned at the pointer by the script below. #}
+        <div class="context-menu" id="staging-menu" role="menu" aria-label="Staging list options" hidden>
+          <button type="button" role="menuitem" class="context-menu__item"
+                  data-action="toggle-full-matches">Hide 100% matches ({{ summary.full_match }})</button>
+        </div>
+
         <div class="actions">
           <button type="submit" form="commit-form" class="btn">Import selected</button>
           <button type="submit" form="clear-form" class="btn btn-danger">Clear staging</button>
@@ -417,6 +486,109 @@
       document.addEventListener("keydown", function (e) {
         if (e.key === "Escape") hide();
       });
+    })();
+
+    // Show/hide the 100% matches — the staged rows that need no decision.
+    //
+    // Purely a view filter: the rows stay in the DOM with their checkboxes
+    // untouched, so hiding never changes what "Import selected" commits. The
+    // choice is remembered in localStorage, so it survives a reload and an
+    // in-place swap. The state is re-applied on every run of this script (the
+    // swap re-executes it against fresh nodes); the listeners are delegated on
+    // document and bound once, so they never stack.
+    (function () {
+      "use strict";
+      var KEY = "jac.import.hideFullMatches";
+
+      function table() { return document.getElementById("staging-table"); }
+      function menu() { return document.getElementById("staging-menu"); }
+
+      // A browser with storage disabled still gets a working toggle; it just
+      // forgets the choice between pages.
+      function isHidden() {
+        try { return localStorage.getItem(KEY) === "1"; } catch (e) { return false; }
+      }
+      function store(on) {
+        try { localStorage.setItem(KEY, on ? "1" : "0"); } catch (e) {}
+      }
+
+      // Apply the remembered choice to whatever table is on screen now, and
+      // word every toggle to say what pressing it will do next.
+      function apply() {
+        var t = table();
+        if (!t) return;
+        var on = isHidden();
+        t.classList.toggle("is-hiding-full", on);
+
+        var counted = document.querySelector("[data-full-match-count]");
+        var count = counted ? parseInt(counted.getAttribute("data-full-match-count"), 10) || 0 : 0;
+        var label = (on ? "Show" : "Hide") + " 100% matches (" + count + ")";
+
+        var actions = document.querySelectorAll('[data-action="toggle-full-matches"]');
+        for (var i = 0; i < actions.length; i++) {
+          actions[i].textContent = label;
+          if (actions[i].hasAttribute("aria-pressed")) {
+            actions[i].setAttribute("aria-pressed", on ? "true" : "false");
+          }
+        }
+      }
+
+      function closeMenu() {
+        var m = menu();
+        if (m) m.hidden = true;
+        openedAt = null;
+      }
+
+      // Where the page stood when the menu opened. A scroll event that reports
+      // this same position is the tail of a scroll that had already finished
+      // (bringing the list into view, say) — not the user scrolling away — so
+      // it must not close a menu that has only just appeared.
+      var openedAt = null;
+
+      function openMenuAt(x, y) {
+        var m = menu();
+        if (!m) return;
+        m.hidden = false;                       // must be shown to measure it
+        var margin = 8;
+        var left = Math.min(x, window.innerWidth - m.offsetWidth - margin);
+        var top = Math.min(y, window.innerHeight - m.offsetHeight - margin);
+        m.style.left = Math.max(margin, left) + "px";
+        m.style.top = Math.max(margin, top) + "px";
+        openedAt = { x: window.scrollX, y: window.scrollY };
+      }
+
+      apply();
+
+      if (window.__stagingMenuBound) return;
+      window.__stagingMenuBound = true;
+
+      document.addEventListener("contextmenu", function (e) {
+        if (!e.target.closest || !e.target.closest("#staging-list")) return;
+        e.preventDefault();
+        openMenuAt(e.clientX, e.clientY);
+      });
+
+      document.addEventListener("click", function (e) {
+        if (!e.target.closest) return;
+        if (e.target.closest('[data-action="toggle-full-matches"]')) {
+          e.preventDefault();
+          store(!isHidden());
+          apply();
+          closeMenu();
+          return;
+        }
+        if (!e.target.closest("#staging-menu")) closeMenu();
+      });
+
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") closeMenu();
+      });
+      // A fixed menu would otherwise hang in space once the page moves — but
+      // only a scroll that actually moves the page counts (see ``openedAt``).
+      window.addEventListener("scroll", function () {
+        if (!openedAt) return;
+        if (window.scrollX !== openedAt.x || window.scrollY !== openedAt.y) closeMenu();
+      }, true);
     })();
   </script>
 {% endblock %}
