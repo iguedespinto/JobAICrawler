@@ -995,3 +995,171 @@ def test_staging_summary_counts_full_matches(app_client, monkeypatch):
     rows = routes_import._staged_rows(fake_db)
 
     assert sum(1 for r in rows if r["full_match"]) == 1
+
+
+# ── Other opportunities from the same company ────────────────────────
+#
+# Each staged row can switch its Similarity cell from the system's suggestion
+# to the other open roles already stored for that same company. The list is
+# built from the same candidates the matching uses, so each entry carries the
+# very same card the suggestion link shows.
+
+
+def _company_db():
+    """Four stored jobs: three at Version 1 (one closed), one elsewhere."""
+    return FakeDB(
+        jobs=[
+            {
+                "_id": ObjectId(),
+                "title": "AI Engineer",
+                "company": "Version 1",
+                "url": "https://example.com/jobs/v1-ai",
+                "location": "Dublin",
+                "salary": "€45,000-€55,000",
+                "keywords": ["LLM", "Python"],
+                "description_text": "Build agentic systems.",
+                "state": "open",
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Data Engineer",
+                "company": "Version 1",
+                "url": "https://example.com/jobs/v1-data",
+                "state": "open",
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Retired Role",
+                "company": "Version 1",
+                "url": "https://example.com/jobs/v1-old",
+                "state": "closed",
+            },
+            {
+                "_id": ObjectId(),
+                "title": "Other Co Role",
+                "company": "Globex",
+                "url": "https://example.com/jobs/gx-1",
+                "state": "open",
+            },
+        ],
+        profiles=[],
+    )
+
+
+def test_company_jobs_lists_other_open_roles_at_the_same_company():
+    """The matched role, closed roles and other companies are all left out."""
+    rows = routes_import.match_jobs(
+        [{"title": "AI Engineer", "company": "Version 1",
+          "url": "https://example.com/jobs/v1-ai"}],
+        _company_db(),
+    )
+
+    # The row matches "AI Engineer" exactly, so that one is the suggestion...
+    assert rows[0]["match_label"] == "AI Engineer @ Version 1"
+    # ...and the switch offers only the company's *other* open role.
+    assert [item["card"]["title"] for item in rows[0]["company_jobs"]] == ["Data Engineer"]
+
+
+def test_company_jobs_are_sorted_by_title():
+    db = _company_db()
+    db.jobs.insert_one(
+        {"_id": ObjectId(), "title": "Analyst", "company": "Version 1",
+         "url": "https://example.com/jobs/v1-an", "state": "open"}
+    )
+
+    rows = routes_import.match_jobs(
+        [{"title": "Brand New", "company": "Version 1",
+          "url": "https://example.com/jobs/v1-new"}],
+        db,
+    )
+
+    titles = [item["card"]["title"] for item in rows[0]["company_jobs"]]
+    assert titles == ["AI Engineer", "Analyst", "Data Engineer"]
+
+
+def test_company_jobs_match_the_company_case_insensitively():
+    rows = routes_import.match_jobs(
+        [{"title": "Brand New", "company": "  VERSION 1 ",
+          "url": "https://example.com/jobs/v1-new"}],
+        _company_db(),
+    )
+
+    assert [i["card"]["title"] for i in rows[0]["company_jobs"]] == [
+        "AI Engineer", "Data Engineer",
+    ]
+
+
+def test_company_jobs_empty_without_a_company():
+    rows = routes_import.match_jobs(
+        [{"title": "No Company", "company": "", "url": "https://example.com/jobs/nc"}],
+        _company_db(),
+    )
+    assert rows[0]["company_jobs"] == []
+
+
+def test_company_jobs_empty_when_the_company_has_no_other_open_role():
+    """Globex has exactly one open role, and it is the one being matched."""
+    rows = routes_import.match_jobs(
+        [{"title": "Other Co Role", "company": "Globex",
+          "url": "https://example.com/jobs/gx-1"}],
+        _company_db(),
+    )
+    assert rows[0]["company_jobs"] == []
+
+
+def test_company_job_carries_the_same_card_as_a_suggestion():
+    """The list reuses the match card, so hovering shows the identical preview."""
+    rows = routes_import.match_jobs(
+        [{"title": "Brand New", "company": "Version 1",
+          "url": "https://example.com/jobs/v1-new"}],
+        _company_db(),
+    )
+
+    card = next(
+        i["card"] for i in rows[0]["company_jobs"] if i["card"]["title"] == "AI Engineer"
+    )
+    assert card["company"] == "Version 1"
+    assert card["salary"] == "€45,000-€55,000"
+    assert card["keywords"] == ["LLM", "Python"]
+    assert card["description"] == "Build agentic systems."
+    assert card["state"] == "open"
+    assert card["job_id"]  # links through to the detail page, like the suggestion
+
+
+def test_company_job_entry_carries_the_posting_url():
+    rows = routes_import.match_jobs(
+        [{"title": "Brand New", "company": "Version 1",
+          "url": "https://example.com/jobs/v1-new"}],
+        _company_db(),
+    )
+    entry = next(
+        i for i in rows[0]["company_jobs"] if i["card"]["title"] == "Data Engineer"
+    )
+    assert entry["url"] == "https://example.com/jobs/v1-data"
+
+
+def test_import_page_renders_the_company_switch(app_client, monkeypatch):
+    fake_db = _company_db()
+    monkeypatch.setattr(routes_import, "get_db", lambda: fake_db)
+    routes_import.stage_jobs(
+        fake_db,
+        [
+            # Version 1 has another open role, so this row gets the switch.
+            {"title": "AI Engineer", "company": "Version 1",
+             "url": "https://example.com/jobs/v1-ai"},
+            # Globex has no other open role, so this row gets none.
+            {"title": "Other Co Role", "company": "Globex",
+             "url": "https://example.com/jobs/gx-1"},
+        ],
+    )
+
+    body = app_client.get("/import").data.decode("utf-8")
+
+    # One switch, on the Version 1 row only. Matched on the button markup: the
+    # action name alone also appears in the page's script.
+    assert body.count('<button type="button" class="sim-switch"') == 1
+    # The company view lists the other open role and links to its posting.
+    assert 'data-view="company"' in body
+    assert "https://example.com/jobs/v1-data" in body
+    # The closed role and the other company's role are not offered.
+    assert "Retired Role" not in body
