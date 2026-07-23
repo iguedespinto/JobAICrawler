@@ -248,3 +248,45 @@ def test_the_company_list_scrolls_rather_than_stretching_the_row(crowded_server,
         "el => { el.scrollTop = 9999; return el.scrollTop; }",
     )
     assert moved > 0
+
+
+def test_the_switch_keeps_clear_of_the_cell_content(server, page):
+    """The switch is absolutely positioned, so the cell must reserve a gutter.
+
+    ``table.data td`` sets the padding and outranks a bare ``.sim-cell`` rule,
+    so the reservation has to be specific enough to win — otherwise the icon
+    lands on top of the first line of text.
+    """
+    page.goto(server + "/import")
+    page.wait_for_selector("#staging-table")
+
+    row = _row(page, "AI Engineer")
+    row.locator(".sim-switch").click()
+
+    geometry = page.eval_on_selector(
+        "td.sim-cell",
+        "cell => ({switchRight: cell.querySelector('.sim-switch').getBoundingClientRect().right,"
+        " headLeft: cell.querySelector('.company-view__head').getBoundingClientRect().left,"
+        " linkLeft: cell.querySelector('.company-list .match-link').getBoundingClientRect().left})",
+    )
+
+    assert geometry["switchRight"] <= geometry["headLeft"]
+    assert geometry["switchRight"] <= geometry["linkLeft"]
+
+
+def test_the_company_roles_are_not_crowded_together(server, page):
+    """Stacked links need room to read as separate rows."""
+    page.goto(server + "/import")
+    page.wait_for_selector("#staging-table")
+
+    row = _row(page, "AI Engineer")
+    row.locator(".sim-switch").click()
+
+    links = page.eval_on_selector_all(
+        '[data-view="company"] .company-list li',
+        "els => els.map(el => el.getBoundingClientRect().top)",
+    )
+    assert len(links) >= 2
+    # Consecutive roles sit clearly apart, not stacked line-on-line.
+    spacing = links[1] - links[0]
+    assert spacing >= 20, f"roles only {spacing}px apart"

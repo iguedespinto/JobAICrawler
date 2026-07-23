@@ -179,7 +179,11 @@
     /* The Similarity cell holds two views — the system's suggestion and the
        company's other open roles — and a switch between them. The switch sits
        in the top-left, where the right-aligned percentage never reaches. */
-    .sim-cell { position: relative; padding-left: 2rem; }
+    /* The gutter the absolutely-positioned switch sits in. Qualified up to
+       `table.data td.sim-cell` on purpose: the shared `table.data td` padding
+       rule is more specific than a bare `.sim-cell`, and would otherwise win
+       and drop the icon on top of the first line of text. */
+    table.data td.sim-cell { position: relative; padding-left: 2.15rem; }
     .sim-switch {
       position: absolute;
       top: 0.4rem;
@@ -205,21 +209,21 @@
       font-family: var(--font-mono);
       font-size: 0.6875rem;
       color: var(--ink-faint);
-      margin-bottom: 0.25rem;
+      margin-bottom: 0.45rem;
     }
     .company-list {
       list-style: none;
       margin: 0;
       padding: 0;
-      max-height: 7.5rem;
+      max-height: 9rem;
       overflow-y: auto;
       display: flex;
       flex-direction: column;
-      gap: 0.15rem;
+      gap: 0.4rem;
       font-size: 0.75rem;
       white-space: normal;
     }
-    .company-list li { line-height: 1.35; }
+    .company-list li { line-height: 1.45; }
   </style>
 {% endblock %}
 
