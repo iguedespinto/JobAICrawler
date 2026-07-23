@@ -421,6 +421,13 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
                 "reason": reason,
                 "state": state,
                 "similarity": similarity,
+                # A row needing no decision: the Similarity column reads exactly
+                # 100% (same URL, same title + company, repeated in the upload,
+                # or an identical description). The staging list can hide these
+                # to leave the fuzzy middle — the actual judgement calls — on
+                # screen. Keyed off the percentage, not the reason, so it always
+                # matches what the column shows.
+                "full_match": similarity == 100,
                 "match_label": match["label"] if match else None,
                 "match_url": match["raw_url"] if match else None,
                 # The card of the matched opportunity, revealed on hover over the
@@ -636,6 +643,8 @@ def import_form():
         "matched": sum(1 for r in rows if r["status"] == "matched"),
         "duplicate": sum(1 for r in rows if r["status"] == "duplicate"),
         "closed": sum(1 for r in rows if r["state"] == STATE_CLOSED),
+        # How many rows the "hide 100% matches" toggle would take off screen.
+        "full_match": sum(1 for r in rows if r["full_match"]),
         "pending": len(pending),
         "threshold": SIMILARITY_THRESHOLD,
     }
