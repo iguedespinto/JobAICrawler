@@ -132,9 +132,9 @@ def test_dashboard_route_renders(app_client, monkeypatch):
     response = app_client.get("/dashboard")
     assert response.status_code == 200
     body = response.data.decode("utf-8")
-    # The heading itself, not just the word: "Keywords" is also a nav label on
+    # The heading itself, not just the word: "Skills" is also a nav label on
     # every page, so a bare substring check would pass anywhere.
-    assert '<h1 class="page-title">Keywords</h1>' in body
+    assert '<h1 class="page-title">Skills</h1>' in body
     assert "Python" in body
     # Defaults to open now: 3 open jobs, Python in all 3 -> 100%. The closed
     # job's keyword (Go) is left out entirely.

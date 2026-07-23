@@ -1,7 +1,7 @@
 ## Job AI Crawler
 
-Personal Flask app for collecting and reviewing job opportunities, stored in
-MongoDB Atlas. Opportunities are prepared externally and brought in through a
+Personal Flask app for collecting and reviewing roles, stored in
+MongoDB Atlas. Roles are prepared externally and brought in through a
 JSON import flow.
 
 ### Run locally
@@ -28,32 +28,33 @@ unless a browser is installed:
 - `python -m playwright install chromium`
 - `pytest tests/browser`
 
-### Importing opportunities
+### Importing roles
 
 1. Open `/import`.
 2. Upload a JSON file. The file is an array of objects (a single object is also
    accepted) with these fields:
-   - `name` (job title), `company`, `url`, `salary`, `description`, `keywords`,
+   - `name` (role title), `company`, `url`, `salary`, `description`, `skills`
+     (or `keywords` — both are read),
      and an optional `state` of `open` (default) or `closed`.
-3. Review the preview. Each opportunity is matched against what is already in the
-   database: first by URL, then by title + company. New opportunities are
+3. Review the preview. Each role is matched against what is already in the
+   database: first by URL, then by title + company. New roles are
    pre-selected; matches are not.
 4. Adjust the selection and click **Import selected** to create them.
 
-Opportunities can be imported whether **open** or **closed** (missing `state`
+Roles can be imported whether **open** or **closed** (missing `state`
 counts as open):
 
-- **Open + new** → created as an open opportunity.
+- **Open + new** → created as an open role.
 - **Open + matched** → left as a match; not selected for import.
 - **Closed + matched** (by URL or title + company) → the existing job is updated
   to `closed` (a status update); no new record is created.
 - **Closed + no match** → imported as a `closed` record, kept for
-  statistical/keyword analysis.
+  statistical/skill analysis.
 
 ### Queuing URLs for processing
 
 Bare job URLs can be queued for enrichment before they become importable
-opportunities:
+roles:
 
 1. On `/import`, paste one URL per line into **Pending URLs** and click
    **Queue URLs**. Each URL is checked against active imported jobs and all
@@ -61,32 +62,32 @@ opportunities:
    are rejected). They are stored as `unprocessed` records, hidden from the
    staging table below, and marked **Saved** (see below) — queuing a URL by hand
    counts as an expression of interest, and the mark rides through to the
-   imported opportunity, putting it on your radar.
+   imported role, putting it on your radar.
 2. An MCP client retrieves them with `find_pending_urls`, validates each URL,
    confirms the job is still open, and writes a JSON import file with the full
    fields.
 3. Importing that file (via the upload form or the MCP `import_file` tool) fills
    in the matching queued URL in place and promotes it to a viewable, importable
-   opportunity — so it no longer appears in the pending queue.
+   role — so it no longer appears in the pending queue.
 
 Use **Clear pending URLs** to drop URLs that never produced a record (e.g. a job
 that has since closed).
 
-### Tracking opportunities
+### Tracking roles
 
-Each opportunity carries a single `user_status` marking your relationship to it:
+Each role carries a single `user_status` marking your relationship to it:
 **Saved** (`saved`), **Applied** (`applied`), or unset. The two are mutually
 exclusive — setting one replaces the last — and are set from the job page or the
 MCP `update_job_status` tool.
 
 **On my radar** is not a mark of its own: it is the umbrella over both, meaning
-you are tracking the opportunity at all. It exists only as a filter — the
+you are tracking the role at all. It exists only as a filter — the
 **Status** row on `/jobs` offers *On my radar / Saved / Applied*, and the MCP
 `find_jobs` tool takes the same values in its `user_status` argument, where
 `radar` matches saved or applied.
 
 A URL queued on `/import` arrives **Saved**, and so on your radar. The mark is
-applied only when the opportunity is first created, so re-importing a job you
+applied only when the role is first created, so re-importing a role you
 have since marked **Applied** never knocks it back.
 
 ### In-place navigation (a UI norm)

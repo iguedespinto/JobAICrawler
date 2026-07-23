@@ -389,7 +389,7 @@ def test_commit_imports_selected_and_removes_from_staging(app_client, monkeypatc
         data={"select": str(role_a["_id"])},  # already imported -> 0 processed
         follow_redirects=True,
     ).data.decode("utf-8")
-    assert "No opportunities were selected to import." in body
+    assert "No roles were selected to import." in body
 
 
 def test_commit_flash_reports_processed_and_remaining(app_client, monkeypatch):
@@ -412,7 +412,7 @@ def test_commit_flash_reports_processed_and_remaining(app_client, monkeypatch):
     ).data.decode("utf-8")
 
     # Confirms processing, the imported count, and how many remain staged.
-    assert "Staging processed: imported 1 new opportunity" in body
+    assert "Staging processed: imported 1 new role" in body
     assert "1 still staged." in body
 
 
@@ -1163,3 +1163,42 @@ def test_import_page_renders_the_company_switch(app_client, monkeypatch):
     assert "https://example.com/jobs/v1-data" in body
     # The closed role and the other company's role are not offered.
     assert "Retired Role" not in body
+
+
+# ── "skills" as an alias for "keywords" in an import file ────────────
+#
+# The UI calls them skills now, so a prepared file may use either key. The
+# stored field stays ``keywords``: renaming it would be a data migration and
+# would break every file already written.
+
+
+def test_parse_jobs_accepts_skills_as_an_alias_for_keywords():
+    raw = """[
+      {"name": "A", "company": "Acme", "url": "https://example.com/a",
+       "skills": ["Python", "Flask"]},
+      {"name": "B", "company": "Beta", "url": "https://example.com/b",
+       "keywords": ["Go"]}
+    ]"""
+
+    jobs = routes_import.parse_jobs(raw)
+
+    assert jobs[0]["keywords"] == ["Python", "Flask"]   # read from "skills"
+    assert jobs[1]["keywords"] == ["Go"]                # "keywords" still works
+
+
+def test_parse_jobs_prefers_keywords_when_a_file_carries_both():
+    raw = """[{"name": "A", "url": "https://example.com/a",
+               "keywords": ["Kept"], "skills": ["Ignored"]}]"""
+
+    jobs = routes_import.parse_jobs(raw)
+
+    assert jobs[0]["keywords"] == ["Kept"]
+
+
+def test_parse_jobs_accepts_a_comma_separated_skills_string():
+    raw = """[{"name": "A", "url": "https://example.com/a",
+               "skills": "Python, Flask"}]"""
+
+    jobs = routes_import.parse_jobs(raw)
+
+    assert jobs[0]["keywords"] == ["Python", "Flask"]

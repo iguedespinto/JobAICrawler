@@ -1,15 +1,15 @@
 {% extends "_layout.html" %}
 
-{% block title %}Keywords · Job AI Crawler{% endblock %}
+{% block title %}Skills · Job AI Crawler{% endblock %}
 {% block eyebrow %}
   <div class="eyebrow">
-    {{ total_jobs }} {% if state != 'all' %}{{ state }} {% endif %}opportunit{{ 'y' if total_jobs == 1 else 'ies' }}{% if must or cannot %} · filtered{% endif %}
+    {{ total_jobs }} {% if state != 'all' %}{{ state }} {% endif %}role{{ '' if total_jobs == 1 else 's' }}{% if must or cannot %} · filtered{% endif %}
   </div>
 {% endblock %}
-{% block page_title %}Keywords{% endblock %}
+{% block page_title %}Skills{% endblock %}
 {% block lede %}
-  <p class="page-lede">Every keyword across the postings you've gathered, and how
-    much of the market names it. Drag one keyword onto another — in the cloud or
+  <p class="page-lede">Every skill across the roles you've gathered, and how
+    much of the market names it. Drag one skill onto another — in the cloud or
     the table — to merge them into a group.</p>
 {% endblock %}
 
@@ -193,12 +193,12 @@
     </div>
     <div id="kw-tip">
       <div class="kw-title"></div>
-      <div class="kw-row"><span>Opportunities</span><span class="kw-count"></span></div>
+      <div class="kw-row"><span>Roles</span><span class="kw-count"></span></div>
       <div class="kw-row"><span>Share</span><span class="kw-percent"></span></div>
     </div>
   {% else %}
-    <p class="empty">No keywords yet.
-      <a href="{{ url_for('import_jobs.import_form') }}">Import some opportunities</a> to see what the market asks for.</p>
+    <p class="empty">No skills yet.
+      <a href="{{ url_for('import_jobs.import_form') }}">Import some roles</a> to see what the market asks for.</p>
   {% endif %}
 
   <form method="get" action="{{ url_for('dashboard.view_dashboard') }}" class="panel filters"
@@ -206,12 +206,12 @@
     <label>
       <span class="facet__label">Must contain</span>
       <input type="text" name="must" value="{{ must }}"
-             placeholder="comma,separated — any in title/description/keywords" />
+             placeholder="comma,separated — any in title/description/skills" />
     </label>
     <label>
       <span class="facet__label">Cannot contain</span>
       <input type="text" name="cannot" value="{{ cannot }}"
-             placeholder="comma,separated — none in keywords" />
+             placeholder="comma,separated — none in skills" />
     </label>
     <label>
       <span class="facet__label">Show</span>
@@ -231,18 +231,18 @@
   <!-- Merge dialog -->
   <div class="modal-overlay" id="merge-overlay">
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="merge-heading">
-      <h2 id="merge-heading">Merge keywords</h2>
-      <p class="hint">The two keywords become one group. Every posting that named
+      <h2 id="merge-heading">Merge skills</h2>
+      <p class="hint">The two skills become one group. Every role that named
         either variant counts once, under the display name.</p>
       <div class="merge-pair">
         <div class="merge-side">
-          <h3>Keyword A</h3>
+          <h3>Skill A</h3>
           <strong id="merge-a-name"></strong>
           <div id="merge-a-variants"></div>
         </div>
         <div class="merge-plus">+</div>
         <div class="merge-side">
-          <h3>Keyword B</h3>
+          <h3>Skill B</h3>
           <strong id="merge-b-name"></strong>
           <div id="merge-b-variants"></div>
         </div>
@@ -255,23 +255,23 @@
       </div>
       <div class="btn-row">
         <button class="btn btn-secondary btn-cancel" onclick="closeMerge()">Cancel</button>
-        <button class="btn btn-merge" onclick="confirmMerge()">Merge keywords</button>
+        <button class="btn btn-merge" onclick="confirmMerge()">Merge skills</button>
       </div>
     </div>
   </div>
 
   {% if rows %}
-    <h2 class="section-title" style="margin-top: 2.25rem;">Every keyword</h2>
-    <p class="hint" style="margin-bottom: 0.75rem;">A keyword's count is the
-      number of opportunities that list it; the share is its slice of the
-      {{ total_jobs }} counted above. Click a keyword or its count to see those
-      opportunities.</p>
+    <h2 class="section-title" style="margin-top: 2.25rem;">Every skill</h2>
+    <p class="hint" style="margin-bottom: 0.75rem;">A skill's count is the
+      number of roles that list it; the share is its slice of the
+      {{ total_jobs }} counted above. Click a skill or its count to see those
+      roles.</p>
     <div class="table-wrap kw-table">
       <table class="data">
         <thead>
           <tr>
-            <th class="sortable" data-sort="keyword">Keyword</th>
-            <th class="num sortable desc" data-sort="count">Opportunities</th>
+            <th class="sortable" data-sort="keyword">Skill</th>
+            <th class="num sortable desc" data-sort="count">Roles</th>
             <th class="num sortable pct-cell" data-sort="percent">Share</th>
           </tr>
         </thead>
@@ -284,11 +284,11 @@
                  fills the cell. Refused there, the drag falls to the td. #}
               <td draggable="true" class="kw-draggable" data-keyword="{{ row.keyword }}">
                 <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
-                   draggable="false" title="Show these opportunities">{{ row.keyword }}</a>
+                   draggable="false" title="Show these roles">{{ row.keyword }}</a>
               </td>
               <td class="num">
                 <a href="{{ url_for('jobs.list_jobs', keyword=row.keyword) }}"
-                   title="Show these opportunities">{{ row.count }}</a>
+                   title="Show these roles">{{ row.count }}</a>
               </td>
               <td class="num pct-cell">
                 {{ row.percent }}%
@@ -299,7 +299,7 @@
         </tbody>
         <tfoot>
           <tr>
-            <td>{{ rows|length }} keywords</td>
+            <td>{{ rows|length }} skills</td>
             <td class="num">{{ total_jobs }}</td>
             <td class="num"></td>
           </tr>

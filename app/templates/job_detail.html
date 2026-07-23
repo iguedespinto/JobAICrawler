@@ -92,7 +92,7 @@
 {% block page_head %}{% endblock %}
 
 {% block content %}
-  <a href="{{ url_for('jobs.list_jobs') }}" class="backlink">← All opportunities</a>
+  <a href="{{ url_for('jobs.list_jobs') }}" class="backlink">← All roles</a>
 
   <!-- READ MODE: read-only display, no edit fields. -->
   <div id="read-view">
@@ -145,7 +145,7 @@
 
         {% if job.keywords %}
           <div class="panel">
-            <h2 class="section-title">Keywords</h2>
+            <h2 class="section-title">Skills</h2>
             {% for keyword in job.keywords %}
               <a class="tag" href="https://www.google.com/search?{{ {'q': keyword} | urlencode }}"
                  target="_blank" rel="noopener noreferrer"
@@ -158,7 +158,7 @@
       <aside>
         <div class="panel side-card">
           <h2>Track this</h2>
-          <p class="hint">Saved or Applied both put an opportunity on your radar,
+          <p class="hint">Saved or Applied both put a role on your radar,
             which is how the list groups them. One mark at a time: setting another
             replaces it. URLs queued on the Import page arrive Saved.</p>
           <form method="post" action="{{ url_for('jobs.save_job', job_id=job.id) }}">
@@ -175,7 +175,7 @@
           <h2>State</h2>
           <p class="hint">
             {% if st == 'closed' %}
-              Closed — no longer accepting applications. Closed opportunities are
+              Closed — no longer accepting applications. Closed roles are
               still compared against when matching imports.
             {% else %}
               Open — accepting applications.
@@ -217,7 +217,7 @@
     <div class="page-head">
       <div class="eyebrow">Editing</div>
       <h1 class="page-title">{{ job.title }}</h1>
-      <p class="page-lede">Change any field and save. Available for open and closed opportunities.</p>
+      <p class="page-lede">Change any field and save. Available for open and closed roles.</p>
     </div>
     <div class="panel">
       <form method="post" action="{{ url_for('jobs.edit_job', job_id=job.id) }}" class="edit-form" id="edit-form">
@@ -236,7 +236,7 @@
         <label>Salary
           <input type="text" name="salary" value="{{ job.salary or '' }}" />
         </label>
-        <label>Keywords <span class="meta">(comma-separated)</span>
+        <label>Skills <span class="meta">(comma-separated)</span>
           <input type="text" name="keywords" value="{{ job.keywords | join(', ') if job.keywords else '' }}" />
         </label>
         <div class="field">

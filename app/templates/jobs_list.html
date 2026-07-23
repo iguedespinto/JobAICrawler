@@ -1,8 +1,8 @@
 {% extends "_layout.html" %}
 
-{% block title %}Opportunities · Job AI Crawler{% endblock %}
+{% block title %}Roles · Job AI Crawler{% endblock %}
 {% block eyebrow %}<div class="eyebrow">{{ total }} gathered</div>{% endblock %}
-{% block page_title %}Opportunities{% endblock %}
+{% block page_title %}Roles{% endblock %}
 
 {% block head %}
   <style>
@@ -48,10 +48,10 @@
       {% if filters.get('group') %}<input type="hidden" name="group" value="{{ filters.get('group') }}" />{% endif %}
       {% if filters.get('group_order') %}<input type="hidden" name="group_order" value="{{ filters.get('group_order') }}" />{% endif %}
       <input type="text" name="q" value="{{ filters.get('q', '') }}"
-             placeholder="Search title, keywords, description" aria-label="Search opportunities" />
+             placeholder="Search title, skills, description" aria-label="Search roles" />
       <input type="text" name="exclude" value="{{ filters.get('exclude', '') }}"
              placeholder="Cannot contain (comma,separated)"
-             aria-label="Exclude opportunities containing these terms" />
+             aria-label="Exclude roles containing these terms" />
       <button type="submit" class="btn">Search</button>
       {% if filters.get('q') or filters.get('exclude') %}
         {# Clears both text fields at once; the facets below are kept. #}
@@ -132,15 +132,15 @@
       </div>
     </div>
 
-    {# A keyword or company scope came from somewhere else in the app, so it is
+    {# A skill or company scope came from somewhere else in the app, so it is
        shown as a removable pin rather than hidden in the facet row. #}
     {% if filters.get('keyword') or filters.get('company') %}
       <div class="scope">
         {% if filters.get('keyword') %}
           <span class="scope__pin">
-            Keyword <strong>{{ filters.get('keyword') }}</strong>
+            Skill <strong>{{ filters.get('keyword') }}</strong>
             <a href="{{ url_for('jobs.list_jobs', q=filters.get('q'), exclude=filters.get('exclude'), state=filters.get('state'), user_status=filters.get('user_status'), group=filters.get('group'), group_order=filters.get('group_order')) }}"
-               aria-label="Clear keyword filter" title="Clear keyword">×</a>
+               aria-label="Clear skill filter" title="Clear skill">×</a>
           </span>
         {% endif %}
         {% if filters.get('company') %}
@@ -159,7 +159,7 @@
       {% include "_job_cards.html" %}
     </div>
   {% else %}
-    <p class="empty">No opportunities match these filters. Widen the search, or
+    <p class="empty">No roles match these filters. Widen the search, or
       <a href="{{ url_for('import_jobs.import_form') }}">import some</a>.</p>
   {% endif %}
 
@@ -175,7 +175,7 @@
   {% endif %}
 
   <p id="scroll-status"
-     data-total="{{ total }}">Showing {{ jobs | length }} of {{ total }} opportunities.</p>
+     data-total="{{ total }}">Showing {{ jobs | length }} of {{ total }} roles.</p>
 {% endblock %}
 
 {% block scripts %}
@@ -212,7 +212,7 @@
         function refreshStatus() {
           if (!status) return;
           var shown = grid.querySelectorAll(".job").length;
-          status.textContent = "Showing " + shown + " of " + total + " opportunities.";
+          status.textContent = "Showing " + shown + " of " + total + " roles.";
         }
 
         // The sentinel may still be on screen after appending (a short page, or

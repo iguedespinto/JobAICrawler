@@ -233,11 +233,13 @@ def _normalize_state(value: Any) -> str:
 
 
 def parse_jobs(raw_text: str) -> List[Dict[str, Any]]:
-    """Parse uploaded JSON text into normalized opportunity dictionaries.
+    """Parse uploaded JSON text into normalized role dictionaries.
 
     Accepts either a JSON array of objects or a single object. Each object may
-    use ``name`` (preferred) or ``title`` for the job title. Entries that are
-    not objects are skipped.
+    use ``name`` (preferred) or ``title`` for the role title, and ``keywords``
+    (preferred) or ``skills`` for its skills — the interface calls them skills,
+    so a prepared file may say either, while the stored field stays
+    ``keywords``. Entries that are not objects are skipped.
     """
     data = json.loads(raw_text)
     if isinstance(data, dict):
@@ -260,7 +262,10 @@ def parse_jobs(raw_text: str) -> List[Dict[str, Any]]:
                 "location": (entry.get("location") or "").strip(),
                 "url": url,
                 "salary": (entry.get("salary") or "").strip(),
-                "keywords": _as_keywords(entry.get("keywords")),
+                "keywords": _as_keywords(
+                    entry.get("keywords") if entry.get("keywords") is not None
+                    else entry.get("skills")
+                ),
                 "description_text": (entry.get("description") or "").strip(),
                 "state": _normalize_state(entry.get("state") or entry.get("status")),
             }
@@ -711,7 +716,7 @@ def upload():
         return redirect(url_for("import_jobs.import_form"))
 
     if not jobs:
-        flash("No job opportunities found in the file.")
+        flash("No roles found in the file.")
         return redirect(url_for("import_jobs.import_form"))
 
     result = stage_jobs(db, jobs, source=upload_file.filename)
@@ -863,7 +868,7 @@ def commit():
 
     processed = created + closed + skipped
     if processed == 0:
-        flash("No opportunities were selected to import.")
+        flash("No roles were selected to import.")
     else:
         # How many viewable opportunities are still staged (pending URLs excluded).
         remaining = db.import_staging.count_documents(
@@ -871,7 +876,7 @@ def commit():
         )
         flash(
             f"Staging processed: imported {created} new "
-            f"opportunit{'y' if created == 1 else 'ies'}, "
+            f"role{'' if created == 1 else 's'}, "
             f"closed {closed} existing ({skipped} already existed). "
             f"{remaining} still staged."
         )
@@ -888,5 +893,5 @@ def clear():
     # Pending (unprocessed) URLs are cleared separately via ``clear_urls`` so a
     # staging cleanup doesn't discard URLs an MCP client hasn't processed yet.
     result = db.import_staging.delete_many({"status": {"$ne": STATUS_UNPROCESSED}})
-    flash(f"Cleared {result.deleted_count} staged opportunities.")
+    flash(f"Cleared {result.deleted_count} staged roles.")
     return redirect(url_for("import_jobs.import_form"))
