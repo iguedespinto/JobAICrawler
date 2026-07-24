@@ -1247,3 +1247,176 @@ def test_upload_flash_pluralises_roles(app_client, monkeypatch):
 
     body = app_client.get("/import").data.decode("utf-8")
     assert "Loaded 2 roles from offers.json" in body
+
+
+# ── Merging skills into a 100% match ─────────────────────────────────
+#
+# A re-import of a role already in the database may name skills the first pass
+# missed. Committing the matched staged row now *merges* those new skills into
+# the existing role — a union, so nothing already there is lost — rather than
+# overwriting its fields or doing nothing. This holds for both match kinds
+# (same URL, and same title + company) and for open and closed matches.
+
+
+def test_merge_skills_unions_case_insensitively_and_keeps_order():
+    merged, added = routes_import._merge_skills(
+        ["Python", "Flask"], ["flask", "Go", "python", "Rust"]
+    )
+    # Existing order kept, only genuinely new skills appended, in incoming order.
+    assert merged == ["Python", "Flask", "Go", "Rust"]
+    assert added == ["Go", "Rust"]
+
+
+def test_merge_skills_reports_nothing_added_when_all_known():
+    merged, added = routes_import._merge_skills(["Python"], ["python", "PYTHON"])
+    assert merged == ["Python"]
+    assert added == []
+
+
+def _match_db(existing_skills, url="https://example.com/jobs/a",
+              title="Role A", company="Acme", state="open"):
+    existing_id = ObjectId()
+    return existing_id, FakeDB(
+        jobs=[{
+            "_id": existing_id, "title": title, "company": company, "url": url,
+            "salary": "€50,000", "description_text": "Original text.",
+            "keywords": existing_skills, "state": state,
+            "site": routes_import.IMPORT_SITE, "user_status": "applied",
+        }],
+        profiles=[],
+    )
+
+
+def _stage_and_commit(app_client, monkeypatch, db, staged):
+    monkeypatch.setattr(routes_import, "get_db", lambda: db)
+    db.import_staging.insert_one({**staged, "status": routes_import.STATUS_STAGED})
+    row = db.import_staging.find_one({"status": routes_import.STATUS_STAGED})
+    return app_client.post("/import/commit", data={"select": str(row["_id"])},
+                           follow_redirects=True)
+
+
+def test_matched_row_reports_the_skills_it_would_add():
+    _, db = _match_db(["Python", "Flask"])
+    rows = routes_import.match_jobs(
+        [{"title": "Role A", "company": "Acme", "url": "https://example.com/jobs/a",
+          "keywords": ["Flask", "Go", "Rust"]}],
+        db,
+    )
+    assert rows[0]["reason"] == "url"
+    assert rows[0]["new_skills"] == ["Go", "Rust"]
+
+
+def test_new_row_and_no_new_skills_report_nothing_to_add():
+    _, db = _match_db(["Python", "Go"])
+    rows = routes_import.match_jobs(
+        [
+            # Same URL, but every skill already known.
+            {"title": "Role A", "company": "Acme", "url": "https://example.com/jobs/a",
+             "keywords": ["python", "GO"]},
+            # Brand new role — nothing to merge into.
+            {"title": "Fresh", "company": "New Co", "url": "https://example.com/jobs/z",
+             "keywords": ["Anything"]},
+        ],
+        db,
+    )
+    assert rows[0]["new_skills"] == []
+    assert rows[1]["new_skills"] == []
+
+
+def test_commit_url_match_merges_new_skills_into_existing(app_client, monkeypatch):
+    existing_id, db = _match_db(["Python", "Flask"])
+
+    _stage_and_commit(app_client, monkeypatch, db, {
+        "title": "Role A", "company": "Acme", "url": "https://example.com/jobs/a",
+        "keywords": ["Flask", "Go", "Rust"], "state": routes_import.STATE_OPEN,
+    })
+
+    existing = db.jobs.find_one({"_id": existing_id})
+    assert existing["keywords"] == ["Python", "Flask", "Go", "Rust"]
+    # No duplicate role, and the staged row is gone.
+    assert db.jobs.count_documents({}) == 1
+    assert db.import_staging.count_documents({"status": routes_import.STATUS_STAGED}) == 0
+
+
+def test_commit_title_company_match_merges_new_skills(app_client, monkeypatch):
+    # Same title + company, different URL -> a title_company match, not a URL one.
+    existing_id, db = _match_db(["Python"], url="https://example.com/jobs/original")
+
+    _stage_and_commit(app_client, monkeypatch, db, {
+        "title": "Role A", "company": "Acme", "url": "https://example.com/jobs/reposted",
+        "keywords": ["Python", "Kubernetes"], "state": routes_import.STATE_OPEN,
+    })
+
+    assert db.jobs.find_one({"_id": existing_id})["keywords"] == ["Python", "Kubernetes"]
+    assert db.jobs.count_documents({}) == 1
+
+
+def test_commit_merge_leaves_other_fields_untouched(app_client, monkeypatch):
+    existing_id, db = _match_db(["Python"])
+
+    _stage_and_commit(app_client, monkeypatch, db, {
+        "title": "Role A (reposted)", "company": "Acme",
+        "url": "https://example.com/jobs/a",
+        "salary": "€99,999", "description_text": "Rewritten.",
+        "keywords": ["Python", "Go"], "state": routes_import.STATE_OPEN,
+    })
+
+    existing = db.jobs.find_one({"_id": existing_id})
+    assert existing["keywords"] == ["Python", "Go"]   # skills merged...
+    assert existing["salary"] == "€50,000"            # ...but salary,
+    assert existing["description_text"] == "Original text."  # description,
+    assert existing["title"] == "Role A"              # and title are the DB's.
+    assert existing["user_status"] == "applied"       # user's own mark kept.
+
+
+def test_commit_open_match_without_new_skills_changes_nothing(app_client, monkeypatch):
+    existing_id, db = _match_db(["Python", "Go"])
+
+    _stage_and_commit(app_client, monkeypatch, db, {
+        "title": "Role A", "company": "Acme", "url": "https://example.com/jobs/a",
+        "keywords": ["python"], "state": routes_import.STATE_OPEN,
+    })
+
+    existing = db.jobs.find_one({"_id": existing_id})
+    assert existing["keywords"] == ["Python", "Go"]
+    assert existing["state"] == "open"
+    assert db.jobs.count_documents({}) == 1
+
+
+def test_commit_closed_match_closes_and_merges_skills(app_client, monkeypatch):
+    existing_id, db = _match_db(["Python"], state="open")
+
+    _stage_and_commit(app_client, monkeypatch, db, {
+        "title": "Role A", "company": "Acme", "url": "https://example.com/jobs/a",
+        "keywords": ["Python", "Terraform"], "state": routes_import.STATE_CLOSED,
+    })
+
+    existing = db.jobs.find_one({"_id": existing_id})
+    assert existing["state"] == "closed"                     # closed, as before...
+    assert existing["keywords"] == ["Python", "Terraform"]   # ...and enriched.
+    assert db.jobs.count_documents({}) == 1
+
+
+def test_commit_flash_reports_enriched_count(app_client, monkeypatch):
+    _, db = _match_db(["Python"])
+
+    body = _stage_and_commit(app_client, monkeypatch, db, {
+        "title": "Role A", "company": "Acme", "url": "https://example.com/jobs/a",
+        "keywords": ["Python", "Go"], "state": routes_import.STATE_OPEN,
+    }).data.decode("utf-8")
+
+    assert "enriched 1 with new skills" in body
+
+
+def test_import_page_shows_the_skills_a_match_would_add(app_client, monkeypatch):
+    _, db = _match_db(["Python"])
+    monkeypatch.setattr(routes_import, "get_db", lambda: db)
+    routes_import.stage_jobs(db, [
+        {"title": "Role A", "company": "Acme", "url": "https://example.com/jobs/a",
+         "keywords": ["Python", "GraphQL"]},
+    ])
+
+    body = app_client.get("/import").data.decode("utf-8")
+
+    assert "adds skills" in body
+    assert "GraphQL" in body

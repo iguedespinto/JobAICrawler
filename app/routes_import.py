@@ -227,6 +227,28 @@ def _as_keywords(value: Any) -> List[str]:
     return [part.strip() for part in str(value).split(",") if part.strip()]
 
 
+def _merge_skills(
+    existing: Any, incoming: Any
+) -> Tuple[List[str], List[str]]:
+    """Union two skill lists, keeping the existing ones and their order.
+
+    Returns ``(merged, added)``: ``merged`` is the existing skills followed by
+    the incoming ones not already present (case-insensitive), and ``added`` is
+    just those newly-appended skills, in incoming order. Nothing already on the
+    role is dropped or reordered — a re-import only adds what the first pass
+    missed.
+    """
+    merged = _as_keywords(existing)
+    seen = {skill.lower() for skill in merged}
+    added: List[str] = []
+    for skill in _as_keywords(incoming):
+        if skill.lower() not in seen:
+            seen.add(skill.lower())
+            merged.append(skill)
+            added.append(skill)
+    return merged, added
+
+
 def _normalize_state(value: Any) -> str:
     """Coerce an incoming state/status value to ``closed`` or (default) ``open``."""
     return STATE_CLOSED if _normalize_text(value) in _CLOSED_STATES else STATE_OPEN
@@ -453,6 +475,14 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
             if cand is not match
         ]
 
+        # Skills the staged row would add to the role it matches. Only for a
+        # 100% database match (same URL or same title + company) — the two kinds
+        # that resolve to a single existing role on commit. Empty means there is
+        # nothing to merge, so the option isn't offered.
+        new_skills: List[str] = []
+        if status == "matched" and reason in ("url", "title_company"):
+            new_skills = _merge_skills(match["card"]["keywords"], job.get("keywords"))[1]
+
         state = job.get("state") or STATE_OPEN
         rows.append(
             {
@@ -461,6 +491,8 @@ def match_jobs(jobs: List[Dict[str, Any]], db) -> List[Dict[str, Any]]:
                 "reason": reason,
                 "state": state,
                 "similarity": similarity,
+                # Skills this row would add to the matched role if committed.
+                "new_skills": new_skills,
                 # A row needing no decision: the Similarity column reads exactly
                 # 100% (same URL, same title + company, repeated in the upload,
                 # or an identical description). The staging list can hide these
@@ -796,6 +828,7 @@ def commit():
     now = _utcnow()
     created = 0
     closed = 0
+    enriched = 0
     skipped = 0
 
     for raw_id in request.form.getlist("select"):
@@ -809,20 +842,31 @@ def commit():
 
         state = job.get("state") or STATE_OPEN
 
-        # A closed opportunity that matches an existing job just closes it — no
-        # new record is created.
-        if state == STATE_CLOSED:
-            existing = _find_existing_job(db, job)
-            if existing is not None:
-                db.jobs.update_one(
-                    {"_id": existing["_id"]},
-                    {"$set": {"state": STATE_CLOSED, "updated_at": now}},
-                )
-                closed += 1
-                db.import_staging.delete_one({"_id": oid})
-                continue
+        # A 100% match — same URL, or same title + company — resolves to one
+        # existing role. Rather than overwrite it or do nothing, merge in any
+        # skills this row names that it was missing (a re-import can spot skills
+        # the first pass didn't), and close it too if this row is closed. Other
+        # fields are left as the database has them.
+        existing = _find_existing_job(db, job)
+        if existing is not None:
+            merged, added = _merge_skills(existing.get("keywords"), job.get("keywords"))
+            updates: Dict[str, Any] = {"updated_at": now}
+            if added:
+                updates["keywords"] = merged
+            if state == STATE_CLOSED and existing.get("state") != STATE_CLOSED:
+                updates["state"] = STATE_CLOSED
+            db.jobs.update_one({"_id": existing["_id"]}, {"$set": updates})
 
-        # Otherwise create (or refresh) the opportunity. Closed-with-no-match
+            if state == STATE_CLOSED:
+                closed += 1
+            if added:
+                enriched += 1
+            if state != STATE_CLOSED and not added:
+                skipped += 1
+            db.import_staging.delete_one({"_id": oid})
+            continue
+
+        # No existing match: create the opportunity. Closed-with-no-match
         # lands here too, importing a closed record for statistical analysis.
         # Use the URL as the dedup key only when it identifies a single posting.
         # Search/results-page URLs are shared, so fall back to title + company.
@@ -867,7 +911,7 @@ def commit():
         # Imported records leave the staging area.
         db.import_staging.delete_one({"_id": oid})
 
-    processed = created + closed + skipped
+    processed = created + closed + enriched + skipped
     if processed == 0:
         flash("No roles were selected to import.")
     else:
@@ -878,7 +922,9 @@ def commit():
         flash(
             f"Staging processed: imported {created} new "
             f"role{'' if created == 1 else 's'}, "
-            f"closed {closed} existing ({skipped} already existed). "
+            f"closed {closed} existing, "
+            f"enriched {enriched} with new skills "
+            f"({skipped} already existed). "
             f"{remaining} still staged."
         )
     return redirect(url_for("import_jobs.import_form"))
