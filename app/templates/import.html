@@ -86,6 +86,7 @@
     .action.create { color: var(--pine); }
     .action.close { color: var(--oxblood); }
     .action.none { color: var(--ink-faint); }
+    .action.merge { color: var(--pine-deep); background: var(--pine-wash); border: 1px solid var(--pine-tint); border-radius: 2px; padding: 0.1rem 0.3rem; display: inline-block; }
     .reason { color: var(--ink-muted); font-size: 0.75rem; margin-top: 0.2rem; }
     .keywords { margin-top: 0.3rem; }
     .keywords .tag { font-size: 0.6875rem; }
@@ -391,13 +392,19 @@
                   <td>
                     <span class="badge {{ row.state }}">{{ row.state }}</span>
                     {% if row.state == 'closed' and row.reason in ['url', 'title_company'] %}
-                      <div class="action close">closes existing job</div>
+                      <div class="action close">closes existing role</div>
                     {% elif row.state == 'closed' %}
                       <div class="action create">creates closed record</div>
                     {% elif row.status == 'new' %}
                       <div class="action create">creates role</div>
                     {% else %}
                       <div class="action none">matches existing</div>
+                    {% endif %}
+                    {% if row.new_skills %}
+                      {# Ticking Import merges these into the matched role. #}
+                      <div class="action merge" title="Importing this row adds these skills to the existing role">
+                        adds skills: {{ row.new_skills | join(', ') }}
+                      </div>
                     {% endif %}
                   </td>
                   <td>
